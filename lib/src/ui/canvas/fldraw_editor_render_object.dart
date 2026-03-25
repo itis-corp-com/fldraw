@@ -342,8 +342,9 @@ class FlDrawEditorRenderBox extends RenderBox
   }
 
   void _paintDrawingObjects(Canvas canvas) {
+    final defaultColor = style.defaultStrokeColor ?? Colors.white;
     final Paint objectPaint = Paint()
-      ..color = Colors.white
+      ..color = defaultColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5 / zoom;
     final Paint selectedObjectPaint = Paint()
@@ -355,7 +356,7 @@ class FlDrawEditorRenderBox extends RenderBox
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0 / zoom;
     final Paint selectedArrowPaint = Paint()
-      ..color = Colors.white
+      ..color = defaultColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0 / zoom;
 
@@ -419,52 +420,80 @@ class FlDrawEditorRenderBox extends RenderBox
           continue;
         }
 
-        final textPainter =
-            TextPainter(
-                text: TextSpan(text: obj.text, style: obj.style),
-                textDirection: TextDirection.ltr,
-              )
-              ..layout(
-                maxWidth: obj.rect.width.isFinite
-                    ? obj.rect.width
-                    : double.infinity,
-              )
-              ..paint(canvas, obj.rect.topLeft);
+        // Draw a compact note icon instead of full text
+        final iconRect = obj.rect;
+        final iconColor = obj.style.color ?? defaultColor;
+
+        // Filled rounded-rect background
+        final bgPaint = Paint()
+          ..color = iconColor.withOpacity(0.15)
+          ..style = PaintingStyle.fill;
+        final borderPaint2 = Paint()
+          ..color = iconColor.withOpacity(0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5 / zoom;
+        final rRect = RRect.fromRectAndRadius(
+          iconRect,
+          Radius.circular(4.0 / zoom),
+        );
+        canvas.drawRRect(rRect, bgPaint);
+        canvas.drawRRect(rRect, borderPaint2);
+
+        // Draw a small chat-bubble / note icon inside
+        final cx = iconRect.center.dx;
+        final cy = iconRect.center.dy;
+        final s = iconRect.width * 0.35; // icon half-size
+        final notePath = Path()
+          ..moveTo(cx - s, cy - s * 0.7)
+          ..lineTo(cx + s, cy - s * 0.7)
+          ..lineTo(cx + s, cy + s * 0.3)
+          ..lineTo(cx + s * 0.2, cy + s * 0.3)
+          ..lineTo(cx - s * 0.2, cy + s * 0.8)
+          ..lineTo(cx - s * 0.2, cy + s * 0.3)
+          ..lineTo(cx - s, cy + s * 0.3)
+          ..close();
+        final iconPaint = Paint()
+          ..color = iconColor.withOpacity(0.8)
+          ..style = PaintingStyle.fill;
+        canvas.drawPath(notePath, iconPaint);
+
+        // Two small "text lines" inside the bubble
+        final linePaint2 = Paint()
+          ..color = (iconColor == Colors.white || iconColor == const Color(0xFFFFFFFF))
+              ? Colors.black.withOpacity(0.5)
+              : Colors.white.withOpacity(0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2 / zoom
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(
+          Offset(cx - s * 0.55, cy - s * 0.25),
+          Offset(cx + s * 0.55, cy - s * 0.25),
+          linePaint2,
+        );
+        canvas.drawLine(
+          Offset(cx - s * 0.55, cy + s * 0.05),
+          Offset(cx + s * 0.35, cy + s * 0.05),
+          linePaint2,
+        );
 
         if (isSelected) {
           final selectionPadding = 4.0 / zoom;
           final selectionRect = obj.rect.inflate(selectionPadding);
           canvas.drawRect(selectionRect, selectedBorderPaint);
-
-          final double visibleHandleRadius = 4.0 / zoom;
-          final double handleHitAreaRadius = 10.0 / zoom;
-          final corners = [
-            selectionRect.topLeft,
-            selectionRect.topRight,
-            selectionRect.bottomRight,
-            selectionRect.bottomLeft,
-          ];
-          for (final corner in corners) {
-            canvas.drawCircle(corner, handleHitAreaRadius, handleHitAreaPaint);
-            canvas.drawCircle(corner, visibleHandleRadius, handlePaint);
-          }
+          // No resize handles — note icons are fixed-size
         }
         continue;
       }
 
       if (obj is PencilStrokeObject) {
         final paint = Paint()
-          ..color = obj.isSelected ? Colors.blue : Colors.white;
+          ..color = obj.isSelected ? Colors.blue : (obj.strokeColor ?? defaultColor);
         _paintPencilStroke(canvas, obj, paint);
 
         if (obj.isSelected) {
           final selectionPadding = 4.0 / zoom;
           final selectionRect = obj.rect.inflate(selectionPadding);
-          final selectionRRect = RRect.fromRectAndRadius(
-            selectionRect,
-            const Radius.circular(6.0),
-          );
-          canvas.drawRRect(selectionRRect, selectedRectBorderPaint);
+          canvas.drawRect(selectionRect, selectedRectBorderPaint);
 
           final double visibleHandleRadius = 4.0 / zoom;
           final double handleHitAreaRadius = 10.0 / zoom;
@@ -481,7 +510,15 @@ class FlDrawEditorRenderBox extends RenderBox
         }
         continue;
       } else if (obj is ArrowObject) {
-        final paint = obj.isSelected ? selectedArrowPaint : objectPaint;
+        final Paint paint;
+        if (obj.strokeColor != null) {
+          paint = Paint()
+            ..color = obj.strokeColor!
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (obj.isSelected ? 2.5 : 2.0) / zoom;
+        } else {
+          paint = obj.isSelected ? selectedArrowPaint : objectPaint;
+        }
 
         var start = (obj).start;
         final startAttachment = obj.startAttachment;
@@ -526,7 +563,7 @@ class FlDrawEditorRenderBox extends RenderBox
         }
 
         final pathType = obj.pathType;
-        var controlPoint = obj.midPoint ?? (start + obj.end) / 2;
+        var controlPoint = obj.midPoint ?? (start + end) / 2;
 
         final dx = end.dx - start.dx;
         final dy = end.dy - start.dy;
@@ -539,7 +576,7 @@ class FlDrawEditorRenderBox extends RenderBox
 
         if (pathType == LinkPathType.orthogonal) {
           _paintOrthogonalPath(canvas, start, end, paint);
-        } else {
+        } else if (pathType == LinkPathType.curved) {
           final path = Path()
             ..moveTo(start.dx, start.dy)
             ..quadraticBezierTo(
@@ -548,6 +585,14 @@ class FlDrawEditorRenderBox extends RenderBox
               end.dx,
               end.dy,
             );
+          canvas.drawPath(path, paint);
+        } else {
+          // LinkPathType.straight — midPoint is a vertex (on the line).
+          final path = Path()..moveTo(start.dx, start.dy);
+          if (obj.midPoint != null) {
+            path.lineTo(obj.midPoint!.dx, obj.midPoint!.dy);
+          }
+          path.lineTo(end.dx, end.dy);
           canvas.drawPath(path, paint);
         }
 
@@ -560,7 +605,11 @@ class FlDrawEditorRenderBox extends RenderBox
             controlPoint = Offset(start.dx, end.dy);
           }
         }
-        _paintArrowHead(canvas, controlPoint, end, paint);
+        // For straight lines, arrowhead direction comes from the last vertex.
+        final arrowFrom = pathType == LinkPathType.straight && obj.midPoint != null
+            ? obj.midPoint!
+            : controlPoint;
+        _paintArrowHead(canvas, arrowFrom, end, paint);
 
         if (obj.isSelected) {
           final double visibleHandleRadius = 4.0 / zoom;
@@ -568,11 +617,15 @@ class FlDrawEditorRenderBox extends RenderBox
           final onCurveMidPoint =
               (start * 0.25) + (controlPoint * 0.5) + (end * 0.25);
 
-          final handles = [
-            start,
-            end,
-            pathType == LinkPathType.orthogonal ? cornerPoint : onCurveMidPoint,
-          ];
+          final Offset midHandle;
+          if (pathType == LinkPathType.orthogonal) {
+            midHandle = cornerPoint;
+          } else if (pathType == LinkPathType.straight) {
+            midHandle = obj.midPoint ?? (start + end) / 2;
+          } else {
+            midHandle = onCurveMidPoint;
+          }
+          final handles = [start, end, midHandle];
           for (final handlePos in handles) {
             canvas.drawCircle(
               handlePos,
@@ -582,26 +635,70 @@ class FlDrawEditorRenderBox extends RenderBox
             canvas.drawCircle(handlePos, visibleHandleRadius, handlePaint);
           }
         }
+
+        // Draw vertex annotations
+        if (obj.vertexAnnotations.isNotEmpty) {
+          final Offset annotationMid;
+          if (pathType == LinkPathType.orthogonal) {
+            annotationMid = cornerPoint;
+          } else if (pathType == LinkPathType.straight) {
+            annotationMid = obj.midPoint ?? (start + end) / 2;
+          } else {
+            annotationMid =
+                (start * 0.25) + (controlPoint * 0.5) + (end * 0.25);
+          }
+          _paintVertexAnnotations(
+            canvas,
+            obj.vertexAnnotations,
+            {
+              'arrowStart': start,
+              'arrowEnd': end,
+              'midPoint': annotationMid,
+            },
+            obj.strokeColor ?? style.defaultStrokeColor ?? Colors.white,
+          );
+        }
         continue;
       } else if (obj is LineObject) {
-        final paint = obj.isSelected ? selectedArrowPaint : objectPaint;
+        final Paint paint;
+        if (obj.strokeColor != null) {
+          paint = Paint()
+            ..color = obj.strokeColor!
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (obj.isSelected ? 2.0 : 1.5) / zoom;
+        } else {
+          paint = obj.isSelected ? selectedArrowPaint : objectPaint;
+        }
 
         final controlPoint = obj.midPoint ?? (obj.start + obj.end) / 2;
 
-        final path = Path();
-        path.moveTo(obj.start.dx, obj.start.dy);
-        final mid = obj.midPoint ?? (obj.start + obj.end) / 2;
-        path.quadraticBezierTo(mid.dx, mid.dy, obj.end.dx, obj.end.dy);
-
+        final path = Path()..moveTo(obj.start.dx, obj.start.dy);
+        if (obj.pathType == LinkPathType.curved) {
+          path.quadraticBezierTo(
+            controlPoint.dx, controlPoint.dy,
+            obj.end.dx, obj.end.dy,
+          );
+        } else {
+          // LinkPathType.straight — midPoint is a vertex (on the line).
+          if (obj.midPoint != null) {
+            path.lineTo(obj.midPoint!.dx, obj.midPoint!.dy);
+          }
+          path.lineTo(obj.end.dx, obj.end.dy);
+        }
         canvas.drawPath(path, paint);
 
         if (obj.isSelected) {
           final double visibleHandleRadius = 4.0 / zoom;
           final double handleHitAreaRadius = 10.0 / zoom;
-          final onCurveMidPoint =
-              (obj.start * 0.25) + (controlPoint * 0.5) + (obj.end * 0.25);
 
-          final handles = [obj.start, obj.end, onCurveMidPoint];
+          final Offset midHandle;
+          if (obj.pathType == LinkPathType.straight) {
+            midHandle = obj.midPoint ?? (obj.start + obj.end) / 2;
+          } else {
+            midHandle =
+                (obj.start * 0.25) + (controlPoint * 0.5) + (obj.end * 0.25);
+          }
+          final handles = [obj.start, obj.end, midHandle];
           for (final handlePos in handles) {
             canvas.drawCircle(
               handlePos,
@@ -611,34 +708,123 @@ class FlDrawEditorRenderBox extends RenderBox
             canvas.drawCircle(handlePos, visibleHandleRadius, handlePaint);
           }
         }
+
+        // Draw vertex annotations
+        if (obj.vertexAnnotations.isNotEmpty) {
+          final Offset annotationMid;
+          if (obj.pathType == LinkPathType.straight) {
+            annotationMid = obj.midPoint ?? (obj.start + obj.end) / 2;
+          } else {
+            annotationMid =
+                (obj.start * 0.25) + (controlPoint * 0.5) + (obj.end * 0.25);
+          }
+          _paintVertexAnnotations(
+            canvas,
+            obj.vertexAnnotations,
+            {
+              'arrowStart': obj.start,
+              'arrowEnd': obj.end,
+              'midPoint': annotationMid,
+            },
+            obj.strokeColor ?? style.defaultStrokeColor ?? Colors.white,
+          );
+        }
         continue;
       } else if (obj is CircleObject) {
-        canvas.drawOval(obj.rect, objectPaint);
+        if (obj.strokeColor != null) {
+          final paint = Paint()
+            ..color = obj.strokeColor!
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5 / zoom;
+          canvas.drawOval(obj.rect, paint);
+        } else {
+          canvas.drawOval(obj.rect, objectPaint);
+        }
       } else if (obj is RectangleObject) {
-        final rrect = RRect.fromRectAndRadius(
-          obj.rect,
-          const Radius.circular(4.0),
-        );
-        canvas.drawRRect(rrect, objectPaint);
+        if (obj.strokeColor != null) {
+          final paint = Paint()
+            ..color = obj.strokeColor!
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5 / zoom;
+          canvas.drawRect(obj.rect, paint);
+        } else {
+          canvas.drawRect(obj.rect, objectPaint);
+        }
       } else if (obj is SvgObject) {
+        final center = obj.rect.center;
+
+        canvas.save();
+        canvas.translate(center.dx, center.dy);
+        canvas.rotate(obj.rotation);
+        canvas.translate(-center.dx, -center.dy);
+
         canvas.save();
         canvas.translate(obj.rect.left, obj.rect.top);
 
-        final Size svgSize = obj.pictureInfo.size;
-        final double scaleX =
-            obj.rect.width /
-            (svgSize.width.isFinite && svgSize.width > 0 ? svgSize.width : 1);
-        final double scaleY =
-            obj.rect.height /
-            (svgSize.height.isFinite && svgSize.height > 0
-                ? svgSize.height
-                : 1);
+        if (obj.pictureInfo != null) {
+          final Size svgSize = obj.pictureInfo!.size;
+          final double scaleX =
+              obj.rect.width /
+              (svgSize.width.isFinite && svgSize.width > 0 ? svgSize.width : 1);
+          final double scaleY =
+              obj.rect.height /
+              (svgSize.height.isFinite && svgSize.height > 0
+                  ? svgSize.height
+                  : 1);
 
-        canvas.scale(scaleX, scaleY);
+          canvas.scale(scaleX, scaleY);
 
-        canvas.drawPicture(obj.pictureInfo.picture);
+          final tint = obj.tintColor ?? style.svgTintColor;
+          if (tint != null) {
+            final tintPaint = Paint()
+              ..colorFilter = ColorFilter.mode(tint, BlendMode.srcIn);
+            canvas.saveLayer(
+              Rect.fromLTWH(0, 0, svgSize.width, svgSize.height),
+              tintPaint,
+            );
+            canvas.drawPicture(obj.pictureInfo!.picture);
+            canvas.restore();
+          } else {
+            canvas.drawPicture(obj.pictureInfo!.picture);
+          }
+        } else {
+          // Placeholder rect for SVG not yet loaded
+          final placeholderPaint = Paint()
+            ..color = const Color(0x30808080)
+            ..style = PaintingStyle.fill;
+          canvas.drawRect(
+            Rect.fromLTWH(0, 0, obj.rect.width, obj.rect.height),
+            placeholderPaint,
+          );
+        }
 
-        canvas.restore();
+        canvas.restore(); // inner save (translate to rect origin)
+
+        // Draw damage/impact marks (X) at relative positions on the SVG
+        if (obj.damageMarks.isNotEmpty) {
+          final dmPaint = Paint()
+            ..color = Colors.red
+            ..strokeWidth = 2.0 / zoom
+            ..style = PaintingStyle.stroke
+            ..strokeCap = StrokeCap.round;
+          final markSize = 6.0 / zoom;
+          for (final mark in obj.damageMarks) {
+            final pos = Offset(
+              obj.rect.left + mark.dx * obj.rect.width,
+              obj.rect.top + mark.dy * obj.rect.height,
+            );
+            canvas.drawLine(
+              pos - Offset(markSize, markSize),
+              pos + Offset(markSize, markSize),
+              dmPaint,
+            );
+            canvas.drawLine(
+              pos - Offset(-markSize, markSize),
+              pos + Offset(-markSize, markSize),
+              dmPaint,
+            );
+          }
+        }
 
         if (obj.isSelected) {
           final selectionPadding = 4.0 / zoom;
@@ -647,28 +833,121 @@ class FlDrawEditorRenderBox extends RenderBox
 
           final double visibleHandleRadius = 4.0 / zoom;
           final double handleHitAreaRadius = 10.0 / zoom;
-          final corners = [
-            selectionRect.topLeft,
-            selectionRect.topRight,
-            selectionRect.bottomRight,
-            selectionRect.bottomLeft,
-          ];
-          for (final corner in corners) {
-            canvas.drawCircle(corner, handleHitAreaRadius, handleHitAreaPaint);
-            canvas.drawCircle(corner, visibleHandleRadius, handlePaint);
+
+          // Rotation handle only — no corner resize handles for SVG objects.
+          final rotateHandleOffset = 30.0 / zoom;
+          final topCenter = Offset(selectionRect.center.dx, selectionRect.top);
+          final rotateHandlePos = topCenter - Offset(0, rotateHandleOffset);
+
+          final linePaint = Paint()
+            ..color = const Color(0xFF3B82F6)
+            ..strokeWidth = 1.0 / zoom;
+          canvas.drawLine(topCenter, rotateHandlePos, linePaint);
+          canvas.drawCircle(rotateHandlePos, handleHitAreaRadius, handleHitAreaPaint);
+          canvas.drawCircle(rotateHandlePos, visibleHandleRadius, handlePaint);
+        }
+
+        canvas.restore(); // outer save (rotation transform)
+
+        // Paint unit number badge AFTER rotation restore so it stays upright.
+        // Compute the badge anchor at the rotated bottom-right corner.
+        if (obj.label.isNotEmpty) {
+          final rectCenter = obj.rect.center;
+          final cosR = cos(obj.rotation);
+          final sinR = sin(obj.rotation);
+          // Bottom-right corner in local space, rotated to world space
+          final brLocal = Offset(
+            obj.rect.right - rectCenter.dx,
+            obj.rect.bottom - rectCenter.dy,
+          );
+          final brWorld = Offset(
+            rectCenter.dx + brLocal.dx * cosR - brLocal.dy * sinR,
+            rectCenter.dy + brLocal.dx * sinR + brLocal.dy * cosR,
+          );
+
+          final shortSide = obj.rect.shortestSide;
+          final badgeDiameter =
+              (shortSide * 0.32).clamp(16.0 / zoom, 40.0 / zoom);
+          final badgeRadius = badgeDiameter / 2;
+          final badgeCenter = Offset(
+            brWorld.dx - badgeRadius * 0.3,
+            brWorld.dy - badgeRadius * 0.3,
+          );
+
+          final badgeFill = Paint()..color = const Color(0xFFFFFFFF);
+          final badgeBorder = Paint()
+            ..color = const Color(0xFF666666)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5 / zoom;
+          canvas.drawCircle(badgeCenter, badgeRadius, badgeFill);
+          canvas.drawCircle(badgeCenter, badgeRadius, badgeBorder);
+
+          final fontSize = badgeDiameter * 0.55;
+          final labelSpan = TextSpan(
+            text: obj.label,
+            style: TextStyle(
+              color: const Color(0xFF444444),
+              fontSize: fontSize,
+              fontWeight: FontWeight.w700,
+            ),
+          );
+          final labelPainter = TextPainter(
+            text: labelSpan,
+            textDirection: TextDirection.ltr,
+          )..layout();
+          labelPainter.paint(
+            canvas,
+            Offset(
+              badgeCenter.dx - labelPainter.width / 2,
+              badgeCenter.dy - labelPainter.height / 2,
+            ),
+          );
+
+          // Annotation text below the badge — matches vertex annotation style
+          if (obj.annotation.isNotEmpty) {
+            final annotationColor =
+                style.defaultStrokeColor ?? const Color(0xFFFFFFFF);
+            final annotationFontSize = 10.0 / zoom;
+            final annotationSpan = TextSpan(
+              text: obj.annotation,
+              style: TextStyle(
+                color: annotationColor,
+                fontSize: annotationFontSize,
+                fontWeight: FontWeight.w500,
+              ),
+            );
+            final annotationPainter = TextPainter(
+              text: annotationSpan,
+              textDirection: TextDirection.ltr,
+            )..layout();
+            // Centered below the badge with background for readability
+            final textOffset = Offset(
+              badgeCenter.dx - annotationPainter.width / 2,
+              badgeCenter.dy + badgeRadius + 2.0 / zoom,
+            );
+            final bgRect = Rect.fromLTWH(
+              textOffset.dx - 2.0 / zoom,
+              textOffset.dy - 1.0 / zoom,
+              annotationPainter.width + 4.0 / zoom,
+              annotationPainter.height + 2.0 / zoom,
+            );
+            canvas.drawRRect(
+              RRect.fromRectAndRadius(bgRect, Radius.circular(2.0 / zoom)),
+              Paint()..color = Colors.black.withValues(alpha: 0.5),
+            );
+            annotationPainter.paint(canvas, textOffset);
           }
         }
+        continue;
+      } else if (obj is ReferencePointObject) {
+        _paintReferencePoint(canvas, obj, objectPaint, selectedBorderPaint, handlePaint, handleHitAreaPaint);
         continue;
       }
 
       if (obj.isSelected) {
         final selectionPadding = 4.0 / zoom;
         final selectionRect = obj.rect.inflate(selectionPadding);
-        final selectionRRect = RRect.fromRectAndRadius(
-          selectionRect,
-          const Radius.circular(6.0),
-        );
-        canvas.drawRRect(selectionRRect, selectedBorderPaint);
+        canvas.drawRect(selectionRect, selectedBorderPaint);
 
         final double visibleHandleRadius = 4.0 / zoom;
         final double handleHitAreaRadius = 10.0 / zoom;
@@ -730,6 +1009,143 @@ class FlDrawEditorRenderBox extends RenderBox
     }
   }
 
+  void _paintReferencePoint(
+    Canvas canvas,
+    ReferencePointObject obj,
+    Paint objectPaint,
+    Paint selectedBorderPaint,
+    Paint handlePaint,
+    Paint handleHitAreaPaint,
+  ) {
+    final pos = obj.position;
+    final r = 8.0 / zoom;
+
+    // Draw dashed lines to every SVG object with distance labels
+    for (final other in drawingObjects.values) {
+      if (other is SvgObject) {
+        final target = other.rect.center;
+        _paintDashedLineBetween(canvas, pos, target, zoom);
+        _paintDistanceLabel(canvas, pos, target, zoom);
+      }
+    }
+
+    // White outer ring
+    final outerPaint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(pos, r, outerPaint);
+
+    // Light blue fill
+    final fillPaint = Paint()
+      ..color = const Color(0xFF64B5F6)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(pos, r * 0.7, fillPaint);
+
+    // Subtle border
+    final borderPaint = Paint()
+      ..color = const Color(0xFF1E88E5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 / zoom;
+    canvas.drawCircle(pos, r, borderPaint);
+
+    // Inner dot
+    final dotPaint = Paint()
+      ..color = const Color(0xFFFFFFFF)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(pos, r * 0.2, dotPaint);
+
+    // "RP" label to the lower-right — matches stroke color for visibility
+    final labelColor = style.defaultStrokeColor ?? const Color(0xFFFFFFFF);
+    final textStyle = ui.TextStyle(
+      color: labelColor,
+      fontSize: 9.0 / zoom,
+      fontWeight: FontWeight.w600,
+    );
+    final paragraphBuilder = ui.ParagraphBuilder(ui.ParagraphStyle(
+      textAlign: TextAlign.left,
+    ))
+      ..pushStyle(textStyle)
+      ..addText('RP');
+    final paragraph = paragraphBuilder.build()
+      ..layout(const ui.ParagraphConstraints(width: double.infinity));
+    canvas.drawParagraph(paragraph, pos + Offset(r * 1.1, r * 0.3));
+
+    // Selection handles
+    if (obj.isSelected) {
+      final selectionPadding = 4.0 / zoom;
+      final selectionRect = obj.rect.inflate(selectionPadding + r * 0.5);
+      canvas.drawRect(selectionRect, selectedBorderPaint);
+    }
+  }
+
+  void _paintDashedLineBetween(Canvas canvas, Offset from, Offset to, double zoom) {
+    final delta = to - from;
+    final distance = delta.distance;
+    if (distance < 1e-6) return;
+
+    final direction = delta / distance;
+    final dashWidth = 5.0 / zoom;
+    final dashSpace = 4.0 / zoom;
+    final paint = Paint()
+      ..color = const Color(0xFF90CAF9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0 / zoom;
+
+    double drawn = 0;
+    while (drawn < distance) {
+      final segStart = from + direction * drawn;
+      final segEnd = from + direction * min(drawn + dashWidth, distance);
+      canvas.drawLine(segStart, segEnd, paint);
+      drawn += dashWidth + dashSpace;
+    }
+  }
+
+  void _paintDistanceLabel(Canvas canvas, Offset from, Offset to, double zoom) {
+    final delta = to - from;
+    final pixelDistance = delta.distance;
+    if (pixelDistance < 1e-6) return;
+
+    // Convert world-coordinate distance to feet using the map-calibrated
+    // scale factor. metersPerWorldUnit is set by the host app from the
+    // Mapbox metersPerPixel API × canvasZoom so that 1 world unit maps
+    // to the correct real-world distance.
+    final mPerUnit = style.metersPerWorldUnit ?? 0.15; // fallback ≈ 0.5 ft
+    final feet = pixelDistance * mPerUnit * 3.28084;
+    final label = '${feet.toStringAsFixed(1)} ft';
+
+    final midpoint = (from + to) / 2;
+    final fontSize = 9.0 / zoom;
+    final textSpan = TextSpan(
+      text: label,
+      style: TextStyle(
+        fontSize: fontSize,
+        color: const Color(0xFFFFFFFF),
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final textPainter = TextPainter(
+      text: textSpan,
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    // Offset perpendicular to line so label doesn't overlap
+    final direction = delta / pixelDistance;
+    final perpendicular = Offset(-direction.dy, direction.dx);
+    final labelOffset = midpoint + perpendicular * (10.0 / zoom);
+
+    final bgRect = Rect.fromLTWH(
+      labelOffset.dx - 3.0 / zoom,
+      labelOffset.dy - 1.0 / zoom,
+      textPainter.width + 6.0 / zoom,
+      textPainter.height + 2.0 / zoom,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(bgRect, Radius.circular(3.0 / zoom)),
+      Paint()..color = const Color(0xCC000000),
+    );
+    textPainter.paint(canvas, labelOffset);
+  }
+
   void _paintPencilStroke(
     Canvas canvas,
     PencilStrokeObject object,
@@ -766,6 +1182,64 @@ class FlDrawEditorRenderBox extends RenderBox
       }
       object.cachedPath = path;
       canvas.drawPath(path, paint..style = PaintingStyle.fill);
+    }
+  }
+
+  void _paintVertexAnnotations(
+    Canvas canvas,
+    Map<String, VertexAnnotation> annotations,
+    Map<String, Offset> handlePositions,
+    Color textColor,
+  ) {
+    final fontSize = 10.0 / zoom;
+    for (final entry in annotations.entries) {
+      final pos = handlePositions[entry.key];
+      if (pos == null) continue;
+      final annotation = entry.value;
+      if (annotation.isEmpty) continue;
+
+      // Build display text: distance on first line, label on second
+      final parts = <String>[];
+      if (annotation.distance != null && annotation.distance!.isNotEmpty) {
+        parts.add(annotation.distance!);
+      }
+      if (annotation.label != null && annotation.label!.isNotEmpty) {
+        parts.add(annotation.label!);
+      }
+      if (parts.isEmpty) continue;
+
+      final displayText = parts.join('\n');
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: displayText,
+          style: TextStyle(
+            fontSize: fontSize,
+            color: textColor,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      // Position below the vertex, centered horizontally
+      final offset = Offset(
+        pos.dx - textPainter.width / 2,
+        pos.dy + (8.0 / zoom),
+      );
+
+      // Draw a subtle background for readability
+      final bgRect = Rect.fromLTWH(
+        offset.dx - 2.0 / zoom,
+        offset.dy - 1.0 / zoom,
+        textPainter.width + 4.0 / zoom,
+        textPainter.height + 2.0 / zoom,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(bgRect, Radius.circular(2.0 / zoom)),
+        Paint()..color = Colors.black.withValues(alpha: 0.5),
+      );
+
+      textPainter.paint(canvas, offset);
     }
   }
 
@@ -885,14 +1359,14 @@ class FlDrawEditorRenderBox extends RenderBox
 
   void _paintSelectionArea(Canvas canvas, Rect viewport) {
     if (selectionArea.isEmpty) return;
-    final style = FlSelectionAreaStyle();
+    final selStyle = style.selectionAreaStyle;
     final Paint selectionPaint = Paint()
-      ..color = style.color
+      ..color = selStyle.color
       ..style = PaintingStyle.fill;
     canvas.drawRect(selectionArea, selectionPaint);
     final Paint borderPaint = Paint()
-      ..color = style.borderColor
-      ..strokeWidth = style.borderWidth
+      ..color = selStyle.borderColor
+      ..strokeWidth = selStyle.borderWidth
       ..style = PaintingStyle.stroke;
     canvas.drawRect(selectionArea, borderPaint);
   }

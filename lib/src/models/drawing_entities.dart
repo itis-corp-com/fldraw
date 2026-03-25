@@ -18,6 +18,7 @@ enum EditorTool {
   figure,
   comment,
   add,
+  referencePoint,
 }
 
 enum Handle {
@@ -29,11 +30,44 @@ enum Handle {
   arrowStart,
   arrowEnd,
   midPoint,
+  // For rotation
+  rotate,
   // For no handle
   none,
 }
 
-enum LinkPathType { straight, orthogonal }
+enum LinkPathType { straight, curved, orthogonal }
+
+/// Annotation attached to a specific vertex (start, end, or midPoint) of a
+/// line or arrow.  Holds an optional free-form label and an optional distance
+/// measurement string (e.g. "42 ft").
+class VertexAnnotation {
+  final String? label;
+  final String? distance;
+
+  const VertexAnnotation({this.label, this.distance});
+
+  bool get isEmpty => (label == null || label!.isEmpty) && (distance == null || distance!.isEmpty);
+
+  Map<String, dynamic> toJson() => {
+    if (label != null) 'label': label,
+    if (distance != null) 'distance': distance,
+  };
+
+  factory VertexAnnotation.fromJson(Map<String, dynamic> json) {
+    return VertexAnnotation(
+      label: json['label'] as String?,
+      distance: json['distance'] as String?,
+    );
+  }
+
+  VertexAnnotation copyWith({String? label, String? distance}) {
+    return VertexAnnotation(
+      label: label ?? this.label,
+      distance: distance ?? this.distance,
+    );
+  }
+}
 
 abstract class DrawingObject {
   final String id;
@@ -50,8 +84,9 @@ abstract class DrawingObject {
 
 class RectangleObject extends DrawingObject {
   Rect _rect;
+  final Color? strokeColor;
 
-  RectangleObject({required super.id, required Rect rect, super.isSelected})
+  RectangleObject({required super.id, required Rect rect, this.strokeColor, super.isSelected})
     : _rect = rect;
 
   @override
@@ -65,6 +100,7 @@ class RectangleObject extends DrawingObject {
     'type': 'rectangle',
     'rect': _rect.toJson(),
     'isSelected': isSelected,
+    'strokeColor': strokeColor?.toARGB32(),
   };
 
   factory RectangleObject.fromJson(Map<String, dynamic> json) {
@@ -72,23 +108,26 @@ class RectangleObject extends DrawingObject {
       id: json['id'],
       rect: JSONRect.fromJson(json['rect']),
       isSelected: json['isSelected'] ?? false,
+      strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
     );
   }
 
   @override
-  DrawingObject copyWith({Rect? rect, bool? isSelected}) {
+  DrawingObject copyWith({Rect? rect, bool? isSelected, Color? strokeColor}) {
     return RectangleObject(
       id: id,
       rect: rect ?? _rect,
       isSelected: isSelected ?? this.isSelected,
+      strokeColor: strokeColor ?? this.strokeColor,
     );
   }
 }
 
 class CircleObject extends DrawingObject {
   Rect _rect;
+  final Color? strokeColor;
 
-  CircleObject({required super.id, required Rect rect, super.isSelected})
+  CircleObject({required super.id, required Rect rect, this.strokeColor, super.isSelected})
     : _rect = rect;
 
   @override
@@ -102,6 +141,7 @@ class CircleObject extends DrawingObject {
     'type': 'circle',
     'rect': _rect.toJson(),
     'isSelected': isSelected,
+    'strokeColor': strokeColor?.toARGB32(),
   };
 
   factory CircleObject.fromJson(Map<String, dynamic> json) {
@@ -109,15 +149,17 @@ class CircleObject extends DrawingObject {
       id: json['id'],
       rect: JSONRect.fromJson(json['rect']),
       isSelected: json['isSelected'] ?? false,
+      strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
     );
   }
 
   @override
-  DrawingObject copyWith({Rect? rect, bool? isSelected}) {
+  DrawingObject copyWith({Rect? rect, bool? isSelected, Color? strokeColor}) {
     return CircleObject(
       id: id,
       rect: rect ?? _rect,
       isSelected: isSelected ?? this.isSelected,
+      strokeColor: strokeColor ?? this.strokeColor,
     );
   }
 }
@@ -129,6 +171,8 @@ class ArrowObject extends DrawingObject {
   final LinkPathType pathType;
   final ObjectAttachment? startAttachment;
   final ObjectAttachment? endAttachment;
+  final Color? strokeColor;
+  final Map<String, VertexAnnotation> vertexAnnotations;
 
   ArrowObject({
     required super.id,
@@ -139,6 +183,8 @@ class ArrowObject extends DrawingObject {
     this.pathType = LinkPathType.straight,
     this.startAttachment,
     this.endAttachment,
+    this.strokeColor,
+    this.vertexAnnotations = const {},
   });
 
   @override
@@ -195,21 +241,33 @@ class ArrowObject extends DrawingObject {
     'type': 'arrow',
     'start': start.toJson(),
     'end': end.toJson(),
+    if (midPoint != null) 'midPoint': midPoint!.toJson(),
     'isSelected': isSelected,
     'pathType': pathType.name,
     'startAttachment': startAttachment?.toJson(),
     'endAttachment': endAttachment?.toJson(),
+    'strokeColor': strokeColor?.toARGB32(),
+    if (vertexAnnotations.isNotEmpty)
+      'vertexAnnotations': vertexAnnotations.map((k, v) => MapEntry(k, v.toJson())),
   };
 
   factory ArrowObject.fromJson(Map<String, dynamic> json) {
+    final annotationsJson = json['vertexAnnotations'] as Map<String, dynamic>?;
     return ArrowObject(
       id: json['id'],
       start: JSONOffset.fromJson((json['start'] as List).cast<double>()),
       end: JSONOffset.fromJson((json['end'] as List).cast<double>()),
+      midPoint: json['midPoint'] != null
+          ? JSONOffset.fromJson((json['midPoint'] as List).cast<double>())
+          : null,
       isSelected: json['isSelected'] ?? false,
       pathType: LinkPathType.values.byName(json['pathType'] ?? 'straight'),
       startAttachment: json['startAttachment'] != null ? ObjectAttachment.fromJson(json['startAttachment']) : null,
       endAttachment: json['endAttachment'] != null ? ObjectAttachment.fromJson(json['endAttachment']) : null,
+      strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
+      vertexAnnotations: annotationsJson?.map(
+        (k, v) => MapEntry(k, VertexAnnotation.fromJson(v as Map<String, dynamic>)),
+      ) ?? const {},
     );
   }
 
@@ -222,6 +280,10 @@ class ArrowObject extends DrawingObject {
     LinkPathType? pathType,
     ObjectAttachment? startAttachment,
     ObjectAttachment? endAttachment,
+    Color? strokeColor,
+    bool clearStartAttachment = false,
+    bool clearEndAttachment = false,
+    Map<String, VertexAnnotation>? vertexAnnotations,
   }) {
     return ArrowObject(
       id: id,
@@ -230,8 +292,14 @@ class ArrowObject extends DrawingObject {
       isSelected: isSelected ?? this.isSelected,
       midPoint: midPoint ?? this.midPoint,
       pathType: pathType ?? this.pathType,
-      startAttachment: startAttachment ?? this.startAttachment,
-      endAttachment: endAttachment ?? this.endAttachment,
+      startAttachment: clearStartAttachment
+          ? null
+          : (startAttachment ?? this.startAttachment),
+      endAttachment: clearEndAttachment
+          ? null
+          : (endAttachment ?? this.endAttachment),
+      strokeColor: strokeColor ?? this.strokeColor,
+      vertexAnnotations: vertexAnnotations ?? this.vertexAnnotations,
     );
   }
 }
@@ -240,12 +308,18 @@ class LineObject extends DrawingObject {
   Offset start;
   Offset end;
   Offset? midPoint;
+  final LinkPathType pathType;
+  final Color? strokeColor;
+  final Map<String, VertexAnnotation> vertexAnnotations;
 
   LineObject({
     required super.id,
     required this.start,
     required this.end,
     this.midPoint,
+    this.pathType = LinkPathType.straight,
+    this.strokeColor,
+    this.vertexAnnotations = const {},
     super.isSelected,
   });
 
@@ -298,15 +372,29 @@ class LineObject extends DrawingObject {
     'type': 'line',
     'start': start.toJson(),
     'end': end.toJson(),
+    if (midPoint != null) 'midPoint': midPoint!.toJson(),
     'isSelected': isSelected,
+    'pathType': pathType.name,
+    'strokeColor': strokeColor?.toARGB32(),
+    if (vertexAnnotations.isNotEmpty)
+      'vertexAnnotations': vertexAnnotations.map((k, v) => MapEntry(k, v.toJson())),
   };
 
   factory LineObject.fromJson(Map<String, dynamic> json) {
+    final annotationsJson = json['vertexAnnotations'] as Map<String, dynamic>?;
     return LineObject(
       id: json['id'],
       start: JSONOffset.fromJson((json['start'] as List).cast<double>()),
       end: JSONOffset.fromJson((json['end'] as List).cast<double>()),
+      midPoint: json['midPoint'] != null
+          ? JSONOffset.fromJson((json['midPoint'] as List).cast<double>())
+          : null,
       isSelected: json['isSelected'] ?? false,
+      pathType: LinkPathType.values.byName(json['pathType'] ?? 'straight'),
+      strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
+      vertexAnnotations: annotationsJson?.map(
+        (k, v) => MapEntry(k, VertexAnnotation.fromJson(v as Map<String, dynamic>)),
+      ) ?? const {},
     );
   }
 
@@ -316,6 +404,9 @@ class LineObject extends DrawingObject {
     Offset? end,
     Offset? midPoint,
     bool? isSelected,
+    LinkPathType? pathType,
+    Color? strokeColor,
+    Map<String, VertexAnnotation>? vertexAnnotations,
   }) {
     return LineObject(
       id: id,
@@ -323,6 +414,9 @@ class LineObject extends DrawingObject {
       end: end ?? this.end,
       midPoint: midPoint ?? this.midPoint,
       isSelected: isSelected ?? this.isSelected,
+      pathType: pathType ?? this.pathType,
+      strokeColor: strokeColor ?? this.strokeColor,
+      vertexAnnotations: vertexAnnotations ?? this.vertexAnnotations,
     );
   }
 }
@@ -330,10 +424,12 @@ class LineObject extends DrawingObject {
 class PencilStrokeObject extends DrawingObject {
   List<PointVector> points;
   Path? cachedPath;
+  final Color? strokeColor;
 
   PencilStrokeObject({
     required super.id,
     required this.points,
+    this.strokeColor,
     super.isSelected,
   });
 
@@ -374,6 +470,7 @@ class PencilStrokeObject extends DrawingObject {
     'type': 'pencil_stroke',
     'points': points.map((p) => [p.x, p.y, p.pressure]).toList(),
     'isSelected': isSelected,
+    'strokeColor': strokeColor?.toARGB32(),
   };
 
   factory PencilStrokeObject.fromJson(Map<String, dynamic> json) {
@@ -385,15 +482,17 @@ class PencilStrokeObject extends DrawingObject {
           ) // Default pressure if null
           .toList(),
       isSelected: json['isSelected'] ?? false,
+      strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
     );
   }
 
   @override
-  DrawingObject copyWith({List<PointVector>? points, bool? isSelected}) {
+  DrawingObject copyWith({List<PointVector>? points, bool? isSelected, Color? strokeColor}) {
     return PencilStrokeObject(
       id: id,
       points: points ?? this.points,
       isSelected: isSelected ?? this.isSelected,
+      strokeColor: strokeColor ?? this.strokeColor,
     );
   }
 }
@@ -479,6 +578,8 @@ class TextObject extends DrawingObject {
   String text;
   TextStyle style;
   bool isEditing;
+  /// Milliseconds since epoch when the note was created or last edited.
+  int? timestamp;
 
   TextObject({
     required super.id,
@@ -486,6 +587,7 @@ class TextObject extends DrawingObject {
     this.text = 'Text',
     this.style = const TextStyle(fontSize: 16, color: Colors.white),
     this.isEditing = false,
+    this.timestamp,
     super.isSelected,
   }) : _rect = rect;
 
@@ -502,6 +604,7 @@ class TextObject extends DrawingObject {
     'text': text,
     'style': {'fontSize': style.fontSize, 'color': style.color?.value},
     'isSelected': isSelected,
+    if (timestamp != null) 'timestamp': timestamp,
   };
 
   factory TextObject.fromJson(Map<String, dynamic> json) {
@@ -517,6 +620,7 @@ class TextObject extends DrawingObject {
             : Colors.white,
       ),
       isSelected: json['isSelected'] ?? false,
+      timestamp: json['timestamp'] as int?,
     );
   }
 
@@ -527,6 +631,7 @@ class TextObject extends DrawingObject {
     TextStyle? style,
     bool? isSelected,
     bool? isEditing,
+    int? timestamp,
   }) {
     return TextObject(
       id: id,
@@ -535,6 +640,7 @@ class TextObject extends DrawingObject {
       style: style ?? this.style,
       isSelected: isSelected ?? this.isSelected,
       isEditing: isEditing ?? this.isEditing,
+      timestamp: timestamp ?? this.timestamp,
     );
   }
 }
@@ -542,13 +648,25 @@ class TextObject extends DrawingObject {
 class SvgObject extends DrawingObject {
   Rect _rect;
   final String assetPath;
-  final PictureInfo pictureInfo;
+  PictureInfo? pictureInfo;
+  double rotation; // radians
+  String label;
+  /// Free-form text annotation displayed below the unit badge.
+  String annotation;
+  final Color? tintColor;
+  /// Damage/impact marks as relative positions (0,0)=topLeft, (1,1)=bottomRight.
+  final List<Offset> damageMarks;
 
   SvgObject({
     required super.id,
     required Rect rect,
     required this.assetPath,
-    required this.pictureInfo,
+    this.pictureInfo,
+    this.rotation = 0.0,
+    this.label = '',
+    this.annotation = '',
+    this.tintColor,
+    this.damageMarks = const [],
     super.isSelected,
   }) : _rect = rect;
 
@@ -564,16 +682,98 @@ class SvgObject extends DrawingObject {
     'type': 'svg',
     'rect': _rect.toJson(),
     'assetPath': assetPath,
+    'rotation': rotation,
+    'label': label,
+    if (annotation.isNotEmpty) 'annotation': annotation,
+    'tintColor': tintColor?.toARGB32(),
     'isSelected': isSelected,
+    if (damageMarks.isNotEmpty)
+      'damageMarks': damageMarks.map((o) => [o.dx, o.dy]).toList(),
   };
 
+  factory SvgObject.fromJson(Map<String, dynamic> json) {
+    return SvgObject(
+      id: json['id'] as String,
+      rect: JSONRect.fromJson(json['rect']),
+      assetPath: json['assetPath'] as String,
+      rotation: (json['rotation'] as num?)?.toDouble() ?? 0.0,
+      label: json['label'] as String? ?? '',
+      annotation: json['annotation'] as String? ?? '',
+      tintColor: json['tintColor'] != null ? Color(json['tintColor'] as int) : null,
+      isSelected: json['isSelected'] as bool? ?? false,
+      damageMarks: (json['damageMarks'] as List<dynamic>?)
+          ?.map((e) => Offset((e[0] as num).toDouble(), (e[1] as num).toDouble()))
+          .toList() ?? const [],
+    );
+  }
+
   @override
-  DrawingObject copyWith({Rect? rect, bool? isSelected}) {
+  DrawingObject copyWith({
+    Rect? rect,
+    double? rotation,
+    String? label,
+    String? annotation,
+    Color? tintColor,
+    bool? isSelected,
+    List<Offset>? damageMarks,
+  }) {
     return SvgObject(
       id: id,
       rect: rect ?? _rect,
       assetPath: assetPath,
       pictureInfo: pictureInfo,
+      rotation: rotation ?? this.rotation,
+      label: label ?? this.label,
+      annotation: annotation ?? this.annotation,
+      tintColor: tintColor ?? this.tintColor,
+      isSelected: isSelected ?? this.isSelected,
+      damageMarks: damageMarks ?? this.damageMarks,
+    );
+  }
+}
+
+class ReferencePointObject extends DrawingObject {
+  Offset position;
+  final double radius;
+
+  ReferencePointObject({
+    required super.id,
+    required this.position,
+    this.radius = 6.0,
+    super.isSelected,
+  });
+
+  @override
+  Rect get rect => Rect.fromCircle(center: position, radius: radius);
+
+  set rect(Rect newRect) {
+    position = newRect.center;
+  }
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'type': 'referencePoint',
+    'position': position.toJson(),
+    'radius': radius,
+    'isSelected': isSelected,
+  };
+
+  factory ReferencePointObject.fromJson(Map<String, dynamic> json) {
+    return ReferencePointObject(
+      id: json['id'] as String,
+      position: JSONOffset.fromJson((json['position'] as List).cast<double>()),
+      radius: (json['radius'] as num?)?.toDouble() ?? 6.0,
+      isSelected: json['isSelected'] as bool? ?? false,
+    );
+  }
+
+  @override
+  DrawingObject copyWith({Offset? position, double? radius, bool? isSelected}) {
+    return ReferencePointObject(
+      id: id,
+      position: position ?? this.position,
+      radius: radius ?? this.radius,
       isSelected: isSelected ?? this.isSelected,
     );
   }

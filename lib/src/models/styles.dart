@@ -183,11 +183,29 @@ class FlDrawEditorStyle {
   final FlGridStyle gridStyle;
   final FlSelectionAreaStyle selectionAreaStyle;
 
+  /// When set, applies a [BlendMode.srcIn] color filter to all SVG objects,
+  /// tinting them this color. Useful for making dark SVGs visible on dark
+  /// backgrounds (satellite maps) or vice versa.
+  final Color? svgTintColor;
+
+  /// Default stroke color for drawing objects (lines, rectangles, circles,
+  /// pencil strokes, arrows). Individual objects can override via their own
+  /// `strokeColor` field. Falls back to [Colors.white] when null.
+  final Color? defaultStrokeColor;
+
+  /// Real-world meters per canvas world unit at the current map zoom.
+  /// Used by the reference-point distance label to display accurate
+  /// measurements. When null, falls back to a default approximation.
+  final double? metersPerWorldUnit;
+
   const FlDrawEditorStyle({
     this.decoration = const BoxDecoration(color: Colors.black12),
     this.padding = const EdgeInsets.all(8.0),
     this.gridStyle = const FlGridStyle(),
     this.selectionAreaStyle = const FlSelectionAreaStyle(),
+    this.svgTintColor,
+    this.defaultStrokeColor,
+    this.metersPerWorldUnit,
   });
 
   FlDrawEditorStyle copyWith({
@@ -195,12 +213,18 @@ class FlDrawEditorStyle {
     EdgeInsetsGeometry? padding,
     FlGridStyle? gridStyle,
     FlSelectionAreaStyle? selectionAreaStyle,
+    Color? svgTintColor,
+    Color? defaultStrokeColor,
+    double? metersPerWorldUnit,
   }) {
     return FlDrawEditorStyle(
       decoration: decoration ?? this.decoration,
       padding: padding ?? this.padding,
       gridStyle: gridStyle ?? this.gridStyle,
       selectionAreaStyle: selectionAreaStyle ?? this.selectionAreaStyle,
+      svgTintColor: svgTintColor ?? this.svgTintColor,
+      defaultStrokeColor: defaultStrokeColor ?? this.defaultStrokeColor,
+      metersPerWorldUnit: metersPerWorldUnit ?? this.metersPerWorldUnit,
     );
   }
 }
