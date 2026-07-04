@@ -611,6 +611,14 @@ class FlDrawEditorRenderBox extends RenderBox
             : controlPoint;
         _paintArrowHead(canvas, arrowFrom, end, paint);
 
+        // Per-arrow distance label. Uses path-aware length so curved
+        // and orthogonal arrows report their actual path distance, not
+        // the straight chord between endpoints.
+        if (obj.showMeasurement) {
+          _paintLineDistanceLabel(
+            canvas, start, end, obj.midPoint, pathType, zoom);
+        }
+
         if (obj.isSelected) {
           final double visibleHandleRadius = 4.0 / zoom;
           final double handleHitAreaRadius = 10.0 / zoom;
@@ -686,6 +694,13 @@ class FlDrawEditorRenderBox extends RenderBox
           path.lineTo(obj.end.dx, obj.end.dy);
         }
         canvas.drawPath(path, paint);
+
+        // Per-line distance label using path-aware length (curve and
+        // polyline cases included). Default true on new lines.
+        if (obj.showMeasurement) {
+          _paintLineDistanceLabel(
+              canvas, obj.start, obj.end, obj.midPoint, obj.pathType, zoom);
+        }
 
         if (obj.isSelected) {
           final double visibleHandleRadius = 4.0 / zoom;
@@ -776,8 +791,27 @@ class FlDrawEditorRenderBox extends RenderBox
 
           final tint = obj.tintColor ?? style.svgTintColor;
           if (tint != null) {
+            // White-preserving recolour: the assets are grayscale line/fill
+            // art (dark ~#4d4d4d/#080908 shapes, white interior detail). A flat
+            // srcIn tint would paint the whole silhouette one colour and lose
+            // the white detail. Instead map luminance with a per-channel affine
+            // ramp through (dark -> chosen colour) and (white -> white): filled
+            // figures (pedestrians) become a coloured body with white detail,
+            // and vehicle line-art becomes coloured outlines.
+            final argb = tint.toARGB32();
+            final r = ((argb >> 16) & 0xFF).toDouble();
+            final g = ((argb >> 8) & 0xFF).toDouble();
+            final b = (argb & 0xFF).toDouble();
+            const dark = 77.0; // #4d4d4d reference for the dark fills
+            double slope(double c) => (255.0 - c) / (255.0 - dark);
+            double offset(double c) => c - slope(c) * dark;
             final tintPaint = Paint()
-              ..colorFilter = ColorFilter.mode(tint, BlendMode.srcIn);
+              ..colorFilter = ColorFilter.matrix(<double>[
+                slope(r), 0, 0, 0, offset(r), //
+                0, slope(g), 0, 0, offset(g), //
+                0, 0, slope(b), 0, offset(b), //
+                0, 0, 0, 1, 0, //
+              ]);
             canvas.saveLayer(
               Rect.fromLTWH(0, 0, svgSize.width, svgSize.height),
               tintPaint,
@@ -1084,12 +1118,17 @@ class FlDrawEditorRenderBox extends RenderBox
     if (distance < 1e-6) return;
 
     final direction = delta / distance;
-    final dashWidth = 5.0 / zoom;
+    // Larger dash + thicker stroke + darker blue than before
+    // (Blue-200 0xFF90CAF9 was reported as too faint to read against
+    // satellite imagery and the AI diagram render). Blue-700 with 2x
+    // stroke width keeps the dashed reference-point connections
+    // legible across both backgrounds.
+    final dashWidth = 7.0 / zoom;
     final dashSpace = 4.0 / zoom;
     final paint = Paint()
-      ..color = const Color(0xFF90CAF9)
+      ..color = const Color(0xFF1976D2)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0 / zoom;
+      ..strokeWidth = 2.0 / zoom;
 
     double drawn = 0;
     while (drawn < distance) {
@@ -1100,49 +1139,187 @@ class FlDrawEditorRenderBox extends RenderBox
     }
   }
 
+  /// Paint a measurement label for a straight chord between [from] and
+  /// [to]. Used by reference-point connections; lines and arrows go
+  /// through [_paintLineDistanceLabel] which knows about midPoint and
+  /// curve geometry.
   void _paintDistanceLabel(Canvas canvas, Offset from, Offset to, double zoom) {
     final delta = to - from;
     final pixelDistance = delta.distance;
     if (pixelDistance < 1e-6) return;
-
-    // Convert world-coordinate distance to feet using the map-calibrated
-    // scale factor. metersPerWorldUnit is set by the host app from the
-    // Mapbox metersPerPixel API × canvasZoom so that 1 world unit maps
-    // to the correct real-world distance.
-    final mPerUnit = style.metersPerWorldUnit ?? 0.15; // fallback ≈ 0.5 ft
-    final feet = pixelDistance * mPerUnit * 3.28084;
-    final label = '${feet.toStringAsFixed(1)} ft';
-
     final midpoint = (from + to) / 2;
-    final fontSize = 9.0 / zoom;
-    final textSpan = TextSpan(
-      text: label,
-      style: TextStyle(
-        fontSize: fontSize,
-        color: const Color(0xFFFFFFFF),
-        fontWeight: FontWeight.w600,
-      ),
+    final perpendicular = Offset(-delta.dy, delta.dx) / pixelDistance;
+    _paintLengthLabel(
+      canvas: canvas,
+      lengthInUnits: pixelDistance,
+      anchor: midpoint,
+      perpendicular: perpendicular,
+      zoom: zoom,
     );
+  }
+
+  /// Paint a measurement label for a [LineObject] / [ArrowObject]. Uses
+  /// the actual path length:
+  ///   - straight w/o vertex   → chord distance
+  ///   - straight w/ midPoint  → two-segment polyline length
+  ///   - curved (Bezier)       → numerical arc length (24 sub-segments)
+  ///   - orthogonal (L-shape)  → sum of the two axis-aligned segments
+  ///
+  /// Anchor point for the label is the geometric midpoint of the path,
+  /// offset perpendicular so the text doesn't sit on the line.
+  void _paintLineDistanceLabel(
+    Canvas canvas,
+    Offset start,
+    Offset end,
+    Offset? midPoint,
+    LinkPathType pathType,
+    double zoom,
+  ) {
+    if ((end - start).distance < 1e-6) return;
+
+    final length = _pathLength(start, end, midPoint, pathType);
+    final anchor = _pathMidpoint(start, end, midPoint, pathType);
+    final tangent = _pathTangentAt(start, end, midPoint, pathType, 0.5);
+    final perp = tangent.distance < 1e-6
+        ? const Offset(0, -1)
+        : Offset(-tangent.dy, tangent.dx) / tangent.distance;
+
+    _paintLengthLabel(
+      canvas: canvas,
+      lengthInUnits: length,
+      anchor: anchor,
+      perpendicular: perp,
+      zoom: zoom,
+    );
+  }
+
+  /// Numerical arc length of a quadratic Bezier — subdivides into
+  /// [n] segments and sums chord lengths. n=24 keeps relative error
+  /// well under 0.5% for typical curvatures while staying cheap to
+  /// recompute every paint pass.
+  double _quadraticBezierLength(Offset p0, Offset p1, Offset p2,
+      {int n = 24}) {
+    double length = 0;
+    Offset prev = p0;
+    for (int i = 1; i <= n; i++) {
+      final t = i / n;
+      final s = 1 - t;
+      final point = Offset(
+        s * s * p0.dx + 2 * s * t * p1.dx + t * t * p2.dx,
+        s * s * p0.dy + 2 * s * t * p1.dy + t * t * p2.dy,
+      );
+      length += (point - prev).distance;
+      prev = point;
+    }
+    return length;
+  }
+
+  double _pathLength(
+      Offset start, Offset end, Offset? midPoint, LinkPathType pathType) {
+    if (pathType == LinkPathType.curved) {
+      final control = midPoint ?? (start + end) / 2;
+      return _quadraticBezierLength(start, control, end);
+    }
+    if (pathType == LinkPathType.orthogonal) {
+      return (end.dx - start.dx).abs() + (end.dy - start.dy).abs();
+    }
+    // straight
+    if (midPoint != null) {
+      return (midPoint - start).distance + (end - midPoint).distance;
+    }
+    return (end - start).distance;
+  }
+
+  Offset _pathMidpoint(
+      Offset start, Offset end, Offset? midPoint, LinkPathType pathType) {
+    if (pathType == LinkPathType.curved) {
+      final control = midPoint ?? (start + end) / 2;
+      // Bezier point at t=0.5
+      return start * 0.25 + control * 0.5 + end * 0.25;
+    }
+    if (pathType == LinkPathType.orthogonal) {
+      // Corner is closer to the longer axis — anchor between mid-corner.
+      final dx = end.dx - start.dx;
+      final dy = end.dy - start.dy;
+      final corner = dx.abs() > dy.abs()
+          ? Offset(end.dx, start.dy)
+          : Offset(start.dx, end.dy);
+      return corner;
+    }
+    return midPoint ?? (start + end) / 2;
+  }
+
+  Offset _pathTangentAt(Offset start, Offset end, Offset? midPoint,
+      LinkPathType pathType, double t) {
+    if (pathType == LinkPathType.curved) {
+      final p1 = midPoint ?? (start + end) / 2;
+      // d/dt of quadratic Bezier = 2(1-t)(p1-p0) + 2t(p2-p1)
+      return (p1 - start) * (2 * (1 - t)) + (end - p1) * (2 * t);
+    }
+    if (pathType == LinkPathType.orthogonal) {
+      final dx = end.dx - start.dx;
+      final dy = end.dy - start.dy;
+      // Tangent at the corner is along the second leg.
+      return dx.abs() > dy.abs()
+          ? Offset(0, end.dy - start.dy)
+          : Offset(end.dx - start.dx, 0);
+    }
+    if (midPoint != null && t >= 0.5) {
+      return end - midPoint;
+    }
+    if (midPoint != null) {
+      return midPoint - start;
+    }
+    return end - start;
+  }
+
+  /// Shared label painter — no backdrop, theme-aware fill (uses
+  /// [style.labelColor] which the host can lerp from white→black as a
+  /// background-blend slider moves). A subtle drop-shadow keeps the
+  /// label readable against high-contrast backgrounds when fill is
+  /// near-neutral; without the shadow the older opaque pill was a hard
+  /// dark stamp on the canvas.
+  void _paintLengthLabel({
+    required Canvas canvas,
+    required double lengthInUnits,
+    required Offset anchor,
+    required Offset perpendicular,
+    required double zoom,
+  }) {
+    final mPerUnit = style.metersPerWorldUnit ?? 0.15; // fallback ≈ 0.5 ft
+    final feet = lengthInUnits * mPerUnit * 3.28084;
+    // Distances rendered as whole feet — officers don't need decimal
+    // precision on rough sketch measurements and the cleaner labels
+    // read better on small mobile canvases. Applies to reference-
+    // point dashed lines, straight LineObjects, and curved Bezier
+    // ArrowObjects through the same _paintLengthLabel call.
+    final label = '${feet.round()} ft';
+
+    final fontSize = 9.0 / zoom;
+    final fillColor =
+        style.labelColor ?? style.defaultStrokeColor ?? const Color(0xFFFFFFFF);
+
     final textPainter = TextPainter(
-      text: textSpan,
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          fontSize: fontSize,
+          color: fillColor,
+          fontWeight: FontWeight.w600,
+          shadows: const [
+            // Soft drop-shadow so the label survives intermediate fill
+            // colors (gray) when the host's slider is mid-blend.
+            Shadow(color: Color(0x66000000), blurRadius: 1.5),
+            Shadow(color: Color(0x66FFFFFF), blurRadius: 1.5),
+          ],
+        ),
+      ),
       textDirection: TextDirection.ltr,
     )..layout();
 
-    // Offset perpendicular to line so label doesn't overlap
-    final direction = delta / pixelDistance;
-    final perpendicular = Offset(-direction.dy, direction.dx);
-    final labelOffset = midpoint + perpendicular * (10.0 / zoom);
-
-    final bgRect = Rect.fromLTWH(
-      labelOffset.dx - 3.0 / zoom,
-      labelOffset.dy - 1.0 / zoom,
-      textPainter.width + 6.0 / zoom,
-      textPainter.height + 2.0 / zoom,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(bgRect, Radius.circular(3.0 / zoom)),
-      Paint()..color = const Color(0xCC000000),
-    );
+    final labelOffset = anchor +
+        perpendicular * (10.0 / zoom) +
+        Offset(-textPainter.width / 2, -textPainter.height / 2);
     textPainter.paint(canvas, labelOffset);
   }
 
@@ -1192,6 +1369,11 @@ class FlDrawEditorRenderBox extends RenderBox
     Color textColor,
   ) {
     final fontSize = 10.0 / zoom;
+    // Vertex annotations use the host's labelColor when set so they
+    // adjust with the diagram/satellite blend slider — falls back to
+    // the textColor passed by the caller (typically the line's stroke
+    // color) for back-compat.
+    final fillColor = style.labelColor ?? textColor;
     for (final entry in annotations.entries) {
       final pos = handlePositions[entry.key];
       if (pos == null) continue;
@@ -1214,8 +1396,15 @@ class FlDrawEditorRenderBox extends RenderBox
           text: displayText,
           style: TextStyle(
             fontSize: fontSize,
-            color: textColor,
+            color: fillColor,
             fontWeight: FontWeight.w500,
+            shadows: const [
+              // Soft drop-shadow keeps annotations legible at
+              // intermediate fill colors when the host's blend slider
+              // sits mid-range. Subtle — not the prior hard backplate.
+              Shadow(color: Color(0x66000000), blurRadius: 1.5),
+              Shadow(color: Color(0x66FFFFFF), blurRadius: 1.5),
+            ],
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -1225,18 +1414,6 @@ class FlDrawEditorRenderBox extends RenderBox
       final offset = Offset(
         pos.dx - textPainter.width / 2,
         pos.dy + (8.0 / zoom),
-      );
-
-      // Draw a subtle background for readability
-      final bgRect = Rect.fromLTWH(
-        offset.dx - 2.0 / zoom,
-        offset.dy - 1.0 / zoom,
-        textPainter.width + 4.0 / zoom,
-        textPainter.height + 2.0 / zoom,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(bgRect, Radius.circular(2.0 / zoom)),
-        Paint()..color = Colors.black.withValues(alpha: 0.5),
       );
 
       textPainter.paint(canvas, offset);
