@@ -66,32 +66,45 @@ Rect? getEditorBoundsInScreen(GlobalKey key) {
 }
 
 /// Converts a screen position to a world (canvas) position.
+///
+/// Robust to an ancestor scale transform (e.g. a parent `Transform.scale` used
+/// to enlarge the canvas): the world/viewport math uses the editor's LAYOUT
+/// size, but the screen-position ratio uses its ACTUAL on-screen size (which
+/// includes the scale). When there is no scale the two are equal, so behaviour
+/// is unchanged.
 Offset? screenToWorld(
   Offset screenPosition,
   Offset offset,
   double zoom,
 ) {
-  // Get the bounds of the editor widget on the screen
-  final nodeEditorBounds = getEditorBoundsInScreen(kNodeEditorWidgetKey);
-  if (nodeEditorBounds == null) return null;
-  final size = nodeEditorBounds.size;
+  final renderObject = kNodeEditorWidgetKey.currentContext?.findRenderObject();
+  if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+  final layoutSize = renderObject.size; // unscaled world/layout size
+
+  // Actual on-screen rect (accounts for any ancestor scale/translation).
+  final topLeft = renderObject.localToGlobal(Offset.zero);
+  final bottomRight =
+      renderObject.localToGlobal(Offset(layoutSize.width, layoutSize.height));
+  final screenW = (bottomRight.dx - topLeft.dx).abs();
+  final screenH = (bottomRight.dy - topLeft.dy).abs();
+  if (screenW == 0 || screenH == 0) return null;
 
   // Adjust the screen position relative to the top-left of the editor
-  final adjustedScreenPosition = screenPosition - nodeEditorBounds.topLeft;
+  final adjustedScreenPosition = screenPosition - topLeft;
 
-  // Calculate the viewport rectangle in canvas space
+  // Calculate the viewport rectangle in canvas space (from the layout size)
   final viewport = Rect.fromLTWH(
-    -size.width / 2 / zoom - offset.dx,
-    -size.height / 2 / zoom - offset.dy,
-    size.width / zoom,
-    size.height / zoom,
+    -layoutSize.width / 2 / zoom - offset.dx,
+    -layoutSize.height / 2 / zoom - offset.dy,
+    layoutSize.width / zoom,
+    layoutSize.height / zoom,
   );
 
-  // Calculate the canvas position corresponding to the screen position
+  // Map the on-screen ratio into canvas space.
   final canvasX =
-      viewport.left + (adjustedScreenPosition.dx / size.width) * viewport.width;
-  final canvasY = viewport.top +
-      (adjustedScreenPosition.dy / size.height) * viewport.height;
+      viewport.left + (adjustedScreenPosition.dx / screenW) * viewport.width;
+  final canvasY =
+      viewport.top + (adjustedScreenPosition.dy / screenH) * viewport.height;
 
   return Offset(canvasX, canvasY);
 }

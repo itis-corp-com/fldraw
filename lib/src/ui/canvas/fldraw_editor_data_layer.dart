@@ -47,12 +47,14 @@ class FlDrawEditorDataLayer extends StatefulWidget {
   final FlNodeHeaderBuilder? headerBuilder;
   final FlNodeBuilder? nodeBuilder;
   final String fragmentShader;
+  final FlDrawEditorStyle style;
 
   const FlDrawEditorDataLayer({
     super.key,
     this.headerBuilder,
     this.nodeBuilder,
     required this.fragmentShader,
+    this.style = const FlDrawEditorStyle(),
   });
 
   @override
@@ -78,6 +80,11 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     objectId: '',
     handle: Handle.none,
   );
+  // Track last completed resize for double-tap vertex annotation detection.
+  ({String objectId, Handle handle}) _lastCompletedResize = (
+    objectId: '',
+    handle: Handle.none,
+  );
 
   Offset _lastPositionDelta = Offset.zero;
   Offset _lastFocalPoint = Offset.zero;
@@ -92,6 +99,15 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
   SnapPoint? _hoveredSnapPoint;
   SnapPoint? _startSnapPoint;
 
+  // Mobile multi-touch gesture tracking
+  bool _mobileIsPanZoom = false;
+  double _mobileInitialZoom = 1.0;
+  bool _mobileMoved = false;
+  Offset _mobileStartFocal = Offset.zero;
+  DateTime _mobileGestureStartTime = DateTime.now();
+  DateTime? _mobileLastTapTime;
+  late final bool _isMobile;
+
   late final ScaleGestureRecognizer _trackpadGestureRecognizer;
 
   Offset get offset => _canvasBloc.state.viewportOffset;
@@ -104,6 +120,9 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     _canvasBloc = context.read<CanvasBloc>();
     _selectionBloc = context.read<SelectionBloc>();
     _toolBloc = context.read<ToolBloc>();
+
+    final platform = PlatformInfoImpl();
+    _isMobile = platform.isAndroid || platform.isIOS;
 
     _trackpadGestureRecognizer = ScaleGestureRecognizer()
       ..onStart = ((details) => _onPanStart())
@@ -230,6 +249,341 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // Mobile multi-touch gesture handlers
+  // ---------------------------------------------------------------------------
+
+  void _cancelMobileSingleFingerOps() {
+    if (_isDrawing) {
+      setState(() {
+        _isDrawing = false;
+        _tempDrawingObject = null;
+        _currentPencilPoints = [];
+      });
+    }
+    if (_isDraggingSelection) {
+      _isDraggingSelection = false;
+    }
+    if (_isResizing.handle != Handle.none) {
+      _isResizing = (objectId: '', handle: Handle.none);
+      _originalResizeRect = null;
+    }
+    if (_isAreaSelecting) {
+      setState(() {
+        _isAreaSelecting = false;
+        _selectionArea = Rect.zero;
+      });
+    }
+  }
+
+  bool _isConnectableObject(DrawingObject obj) {
+    return obj is SvgObject ||
+        obj is RectangleObject ||
+        obj is CircleObject ||
+        obj is FigureObject;
+  }
+
+  /// Resolves the actual start/end positions of an [ArrowObject] by looking up
+  /// its ObjectAttachments against current canvas state. Matches the logic used
+  /// by the render object at paint time so hit testing aligns with visuals.
+  ({Offset start, Offset end}) _resolveArrowEndpoints(ArrowObject arrow) {
+    final canvasState = _canvasBloc.state;
+    var start = arrow.start;
+    var end = arrow.end;
+
+    final startAttachment = arrow.startAttachment;
+    if (startAttachment != null) {
+      final targetNode = canvasState.nodes[startAttachment.objectId];
+      final targetObject =
+          canvasState.drawingObjects[startAttachment.objectId];
+      final Rect? targetRect = targetNode != null
+          ? getNodeBoundsInWorld(targetNode)
+          : targetObject?.rect;
+      if (targetRect != null) {
+        final relPos = startAttachment.relativePosition;
+        start = targetRect.topLeft +
+            Offset(
+              targetRect.width * relPos.dx,
+              targetRect.height * relPos.dy,
+            );
+      }
+    }
+
+    final endAttachment = arrow.endAttachment;
+    if (endAttachment != null) {
+      final targetNode = canvasState.nodes[endAttachment.objectId];
+      final targetObject =
+          canvasState.drawingObjects[endAttachment.objectId];
+      final Rect? targetRect = targetNode != null
+          ? getNodeBoundsInWorld(targetNode)
+          : targetObject?.rect;
+      if (targetRect != null) {
+        final relPos = endAttachment.relativePosition;
+        end = targetRect.topLeft +
+            Offset(
+              targetRect.width * relPos.dx,
+              targetRect.height * relPos.dy,
+            );
+      }
+    }
+
+    return (start: start, end: end);
+  }
+
+  void _createConnectionBetween(DrawingObject objA, DrawingObject objB) {
+    final centerA = objA.rect.center;
+    final centerB = objB.rect.center;
+
+    // Find the closest border points facing each other
+    final startPoint = getClosestPointOnRectBorder(centerB, objA.rect);
+    final endPoint = getClosestPointOnRectBorder(centerA, objB.rect);
+
+    // Compute 0-1 normalised positions for snap-to attachments
+    final relStart = Offset(
+      (startPoint.dx - objA.rect.left) /
+          objA.rect.width.clamp(0.001, double.infinity),
+      (startPoint.dy - objA.rect.top) /
+          objA.rect.height.clamp(0.001, double.infinity),
+    );
+    final relEnd = Offset(
+      (endPoint.dx - objB.rect.left) /
+          objB.rect.width.clamp(0.001, double.infinity),
+      (endPoint.dy - objB.rect.top) /
+          objB.rect.height.clamp(0.001, double.infinity),
+    );
+
+    final arrowId = const Uuid().v4();
+    final newArrow = ArrowObject(
+      id: arrowId,
+      start: startPoint,
+      end: endPoint,
+      startAttachment: ObjectAttachment(
+        objectId: objA.id,
+        relativePosition: relStart,
+      ),
+      endAttachment: ObjectAttachment(
+        objectId: objB.id,
+        relativePosition: relEnd,
+      ),
+    );
+
+    _canvasBloc.add(DrawingObjectAdded(newArrow));
+    // Select the new arrow so the user can immediately adjust its bezier handle
+    _selectionBloc.add(SelectionReplaced(drawingObjectIds: {arrowId}));
+  }
+
+  void _onMobileScaleStart(ScaleStartDetails details) {
+    _lastFocalPoint = details.focalPoint;
+    _mobileStartFocal = details.focalPoint;
+    _mobileGestureStartTime = DateTime.now();
+    _mobileInitialZoom = _canvasBloc.state.viewportZoom;
+    _mobileMoved = false;
+
+    if (details.pointerCount >= 2) {
+      _mobileIsPanZoom = true;
+      _cancelMobileSingleFingerOps();
+      return;
+    }
+
+    _mobileIsPanZoom = false;
+
+    final worldPos = screenToWorld(
+      details.focalPoint,
+      _canvasBloc.state.viewportOffset,
+      _canvasBloc.state.viewportZoom,
+    );
+    if (worldPos == null) return;
+
+    // 1. Always check resize/rotate handles first (regardless of active tool)
+    _updateHoveredHandle(details.focalPoint);
+    if (_hoveredHandle.handle != Handle.none) {
+      _isResizing = _hoveredHandle;
+      _originalResizeRect =
+          _canvasBloc.state.drawingObjects[_isResizing.objectId]?.rect;
+      return;
+    }
+
+    // 2. Check if finger hit an existing object
+    final hitObjectId = _findHitObject(worldPos);
+    if (hitObjectId != null) {
+      final canvasState = _canvasBloc.state;
+
+      // If one object is already selected and we tap a different connectable
+      // object, auto-create a red bezier connection line between them.
+      final currentSel = _selectionBloc.state;
+      if (currentSel.selectedDrawingObjectIds.length == 1) {
+        final selectedId = currentSel.selectedDrawingObjectIds.first;
+        if (selectedId != hitObjectId) {
+          final selObj = canvasState.drawingObjects[selectedId];
+          final hitObj = canvasState.drawingObjects[hitObjectId];
+          if (selObj != null &&
+              hitObj != null &&
+              _isConnectableObject(selObj) &&
+              _isConnectableObject(hitObj)) {
+            _createConnectionBetween(selObj, hitObj);
+            return;
+          }
+        }
+      }
+
+      // Otherwise, just select the tapped object + prepare drag
+      final isNode = canvasState.nodes.containsKey(hitObjectId);
+      final nodeIds = isNode ? {hitObjectId} : <String>{};
+      final drawingObjectIds = !isNode ? {hitObjectId} : <String>{};
+
+      _selectionBloc.add(
+        SelectionReplaced(
+          nodeIds: nodeIds,
+          drawingObjectIds: drawingObjectIds,
+        ),
+      );
+      _isDraggingSelection = true;
+      return;
+    }
+
+    // 3. Nothing hit → clear selection and use the active tool
+    _selectionBloc.add(SelectionCleared());
+
+    final tool = _toolBloc.state.activeTool;
+    if (tool == EditorTool.arrow || tool == EditorTool.add) {
+      // Start area selection
+      setState(() {
+        _isAreaSelecting = true;
+        _selectionStart = worldPos;
+        _selectionArea = Rect.fromPoints(worldPos, worldPos);
+      });
+    } else {
+      // Start drawing with the active tool
+      _updateSnapHandle(worldPos);
+      _handleDrawingToolPointerDown(
+        PointerDownEvent(position: details.focalPoint, pressure: 1.0),
+        worldPos,
+      );
+    }
+  }
+
+  void _onMobileScaleUpdate(ScaleUpdateDetails details) {
+    _lastFocalPoint = details.focalPoint;
+
+    // Two-finger (or was already two-finger) → pan + zoom
+    if (details.pointerCount >= 2 || _mobileIsPanZoom) {
+      if (!_mobileIsPanZoom) {
+        _mobileIsPanZoom = true;
+        _cancelMobileSingleFingerOps();
+      }
+
+      // Pan
+      if (details.focalPointDelta.distanceSquared > 0) {
+        final panDelta =
+            details.focalPointDelta / _canvasBloc.state.viewportZoom;
+        _canvasBloc.add(CanvasPanned(panDelta));
+      }
+
+      // Zoom
+      if (details.scale != 1.0) {
+        final newZoom =
+            (_mobileInitialZoom * details.scale).clamp(0.1, 10.0);
+        _canvasBloc.add(CanvasZoomed(newZoom));
+      }
+      return;
+    }
+
+    // Track total movement for tap / long-press detection
+    if ((details.focalPoint - _mobileStartFocal).distance > 10.0) {
+      _mobileMoved = true;
+    }
+
+    final worldPos = screenToWorld(
+      details.focalPoint,
+      _canvasBloc.state.viewportOffset,
+      _canvasBloc.state.viewportZoom,
+    );
+    if (worldPos == null) return;
+
+    _updateSnapHandle(worldPos);
+
+    if (_isResizing.handle != Handle.none) {
+      _handleObjectResizing(worldPos);
+    } else if (_isDraggingSelection) {
+      final dragDelta =
+          details.focalPointDelta / _canvasBloc.state.viewportZoom;
+      _canvasBloc.add(
+        ObjectsDragged(
+          _selectionBloc.state.selectedNodeIds.union(
+            _selectionBloc.state.selectedDrawingObjectIds,
+          ),
+          dragDelta,
+        ),
+      );
+    } else if (_isAreaSelecting) {
+      setState(
+        () => _selectionArea = Rect.fromPoints(_selectionStart, worldPos),
+      );
+    } else if (_isDrawing) {
+      _handleObjectDrawing(worldPos, 1.0);
+    }
+  }
+
+  void _onMobileScaleEnd(ScaleEndDetails details) {
+    if (_mobileIsPanZoom) {
+      _mobileIsPanZoom = false;
+      return;
+    }
+
+    final duration = DateTime.now().difference(_mobileGestureStartTime);
+
+    // Finalize any in-progress operations
+    if (_isAreaSelecting) _finalizeAreaSelection();
+    if (_isDrawing) _finalizeDrawing();
+    if (_isResizing.handle != Handle.none) {
+      _lastCompletedResize = _isResizing;
+      _finalizeResizing();
+      _canvasBloc.add(const ObjectsResizeEnded());
+    }
+    if (_isDraggingSelection) {
+      _canvasBloc.add(const ObjectsDragEnded());
+    }
+
+    // Double-tap detection (only for short taps)
+    if (!_mobileMoved && duration < const Duration(milliseconds: 300)) {
+      final now = DateTime.now();
+      if (_mobileLastTapTime != null &&
+          now.difference(_mobileLastTapTime!) <
+              const Duration(milliseconds: 300)) {
+        _onDoubleClick();
+        _mobileLastTapTime = null;
+      } else {
+        _mobileLastTapTime = now;
+
+        // Single tap on a TextObject → fire the viewer callback
+        final config = FlDrawConfig.of(context);
+        if (config?.onTextObjectTapped != null) {
+          final worldPos = screenToWorld(
+            _mobileStartFocal,
+            _canvasBloc.state.viewportOffset,
+            _canvasBloc.state.viewportZoom,
+          );
+          if (worldPos != null) {
+            final hitId = _findHitObject(worldPos);
+            if (hitId != null) {
+              final hitObj = _canvasBloc.state.drawingObjects[hitId];
+              if (hitObj is TextObject) {
+                config!.onTextObjectTapped!(hitObj);
+              }
+            }
+          }
+        }
+      }
+    } else {
+      _mobileLastTapTime = null;
+    }
+
+    // Reset state
+    _isDraggingSelection = false;
+    _isResizing = (objectId: '', handle: Handle.none);
+    _originalResizeRect = null;
+  }
+
   void _onScaleUpdate(ScaleUpdateDetails details) {
     final state = _canvasBloc.state;
     if (details.scale != 1.0) {
@@ -308,7 +662,17 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     if (_isResizing.handle != Handle.none) {
       _handleObjectResizing(worldPos);
     } else if (_isDraggingSelection) {
-      final dragDelta = event.delta / _canvasBloc.state.viewportZoom;
+      // Scale-correct drag: diff of world positions (handles an ancestor
+      // Transform.scale). Falls back to the raw delta if the previous world
+      // position can't be resolved.
+      final prevWorld = screenToWorld(
+        event.position - event.delta,
+        _canvasBloc.state.viewportOffset,
+        _canvasBloc.state.viewportZoom,
+      );
+      final dragDelta = prevWorld != null
+          ? (worldPos - prevWorld)
+          : (event.delta / _canvasBloc.state.viewportZoom);
       _canvasBloc.add(
         ObjectsDragged(
           _selectionBloc.state.selectedNodeIds.union(
@@ -355,14 +719,150 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     );
     if (worldPos == null) return;
 
-    final hitObject = _findHitObject(worldPos);
-    if (hitObject != null &&
-        _canvasBloc.state.drawingObjects[hitObject] is TextObject) {
-      _beginTextEditing(
-        existingObject:
-            _canvasBloc.state.drawingObjects[hitObject] as TextObject,
-      );
+    // Check for vertex hit on lines/arrows first
+    if (_tryVertexDoubleTap(worldPos)) return;
+
+    // Fallback: if the last resize was on an arrow/line handle, use that
+    // directly. This handles cases where the position hit-test misses due
+    // to micro-movement during the resize.
+    if (_lastCompletedResize.handle != Handle.none) {
+      final resizeObj = _canvasBloc.state.drawingObjects[_lastCompletedResize.objectId];
+      if (resizeObj != null) {
+        final isLineOrArrow = resizeObj is ArrowObject || resizeObj is LineObject;
+        if (isLineOrArrow) {
+          final config = FlDrawConfig.of(context);
+          if (config?.onVertexDoubleTapped != null) {
+            final handle = _lastCompletedResize.handle;
+            Offset vertexPos = worldPos;
+            if (resizeObj is ArrowObject) {
+              final resolved = _resolveArrowEndpoints(resizeObj);
+              if (handle == Handle.arrowStart) vertexPos = resolved.start;
+              else if (handle == Handle.arrowEnd) vertexPos = resolved.end;
+              else if (handle == Handle.midPoint) vertexPos = resizeObj.midPoint ?? (resolved.start + resolved.end) / 2.0;
+            } else if (resizeObj is LineObject) {
+              if (handle == Handle.arrowStart) vertexPos = resizeObj.start;
+              else if (handle == Handle.arrowEnd) vertexPos = resizeObj.end;
+              else if (handle == Handle.midPoint) vertexPos = resizeObj.midPoint ?? (resizeObj.start + resizeObj.end) / 2.0;
+            }
+            _handleVertexAnnotation(resizeObj, handle, vertexPos, config!.onVertexDoubleTapped!);
+            _lastCompletedResize = (objectId: '', handle: Handle.none);
+            return;
+          }
+        }
+      }
+      _lastCompletedResize = (objectId: '', handle: Handle.none);
     }
+
+    final hitObject = _findHitObject(worldPos);
+    if (hitObject != null) {
+      final obj = _canvasBloc.state.drawingObjects[hitObject];
+      if (obj is TextObject) {
+        _beginTextEditing(existingObject: obj);
+        return;
+      }
+      if (obj is SvgObject) {
+        final config = FlDrawConfig.of(context);
+        config?.onSvgDoubleTapped?.call(obj);
+        return;
+      }
+      if (obj is ReferencePointObject) {
+        _canvasBloc.add(ObjectsRemoved(
+          nodeIds: const {},
+          drawingObjectIds: {obj.id},
+        ));
+        return;
+      }
+    }
+  }
+
+  /// Returns true if the double-tap landed on a line/arrow vertex and was handled.
+  bool _tryVertexDoubleTap(Offset worldPos) {
+    final config = FlDrawConfig.of(context);
+    if (config?.onVertexDoubleTapped == null) return false;
+
+    final zoom = _canvasBloc.state.viewportZoom;
+    final handleHitAreaRadius = (_isMobile ? 24.0 : 10.0) / zoom;
+
+    for (final entry in _canvasBloc.state.drawingObjects.entries) {
+      final obj = entry.value;
+      Map<Handle, Offset>? handles;
+
+      if (obj is ArrowObject) {
+        final resolved = _resolveArrowEndpoints(obj);
+        final start = resolved.start;
+        final end = resolved.end;
+        final midPoint = obj.midPoint ?? (start + end) / 2.0;
+        final onCurveMidPoint = (start * 0.25) + (midPoint * 0.5) + (end * 0.25);
+        handles = {
+          Handle.arrowStart: start,
+          Handle.arrowEnd: end,
+          Handle.midPoint: obj.pathType == LinkPathType.orthogonal
+              ? (obj.end.dx - obj.start.dx).abs() > (obj.end.dy - obj.start.dy).abs()
+                  ? Offset(end.dx, start.dy)
+                  : Offset(start.dx, end.dy)
+              : onCurveMidPoint,
+        };
+      } else if (obj is LineObject) {
+        final start = obj.start;
+        final end = obj.end;
+        final midPoint = obj.midPoint ?? (start + end) / 2.0;
+        final onCurveMidPoint = (start * 0.25) + (midPoint * 0.5) + (end * 0.25);
+        handles = {
+          Handle.arrowStart: start,
+          Handle.arrowEnd: end,
+          Handle.midPoint: onCurveMidPoint,
+        };
+      }
+
+      if (handles == null) continue;
+
+      for (final h in handles.entries) {
+        if ((worldPos - h.value).distance < handleHitAreaRadius) {
+          _handleVertexAnnotation(obj, h.key, h.value, config!.onVertexDoubleTapped!);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Future<void> _handleVertexAnnotation(
+    DrawingObject obj,
+    Handle handle,
+    Offset vertexPosition,
+    Future<VertexAnnotation?> Function(
+      DrawingObject, Handle, Offset, VertexAnnotation?,
+    ) callback,
+  ) async {
+    final handleKey = handle.name;
+    final Map<String, VertexAnnotation> annotations;
+    if (obj is ArrowObject) {
+      annotations = obj.vertexAnnotations;
+    } else if (obj is LineObject) {
+      annotations = obj.vertexAnnotations;
+    } else {
+      return;
+    }
+
+    final existing = annotations[handleKey];
+    final result = await callback(obj, handle, vertexPosition, existing);
+
+    if (!mounted || result == null) return;
+
+    final newAnnotations = Map<String, VertexAnnotation>.from(annotations);
+    if (result.isEmpty) {
+      newAnnotations.remove(handleKey);
+    } else {
+      newAnnotations[handleKey] = result;
+    }
+
+    final DrawingObject updated;
+    if (obj is ArrowObject) {
+      updated = obj.copyWith(vertexAnnotations: newAnnotations);
+    } else {
+      updated = (obj as LineObject).copyWith(vertexAnnotations: newAnnotations);
+    }
+    _canvasBloc.add(DrawingObjectUpdated(updated));
   }
 
   void _handleArrowToolPointerDown(PointerDownEvent event, Offset worldPos) {
@@ -426,6 +926,20 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
       return;
     }
 
+    if (tool == EditorTool.referencePoint) {
+      final id = const Uuid().v4();
+      final radius = 6.0 / _canvasBloc.state.viewportZoom;
+      final newObject = ReferencePointObject(
+        id: id,
+        position: _drawingStart,
+        radius: radius,
+      );
+      _canvasBloc.add(DrawingObjectAdded(newObject));
+      _toolBloc.add(const ToolSelected(EditorTool.arrow));
+      _isDrawing = false;
+      return;
+    }
+
     setState(() {
       if (tool == EditorTool.pencil) {
         _currentPencilPoints = [
@@ -451,14 +965,29 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     final objectId = _isResizing.objectId;
     final handle = _isResizing.handle;
     final object = _canvasBloc.state.drawingObjects[objectId];
-    if (object == null || _originalResizeRect == null) return;
+    if (object == null) return;
+
+    // Handle rotation for SvgObject
+    if (handle == Handle.rotate && object is SvgObject) {
+      final center = object.rect.center;
+      final angle = atan2(worldPos.dy - center.dy, worldPos.dx - center.dx);
+      // Offset so dragging straight up = 0 rotation
+      final rotation = angle + pi / 2;
+      final updatedObject = object.copyWith(rotation: rotation);
+      _canvasBloc.add(DrawingObjectUpdated(updatedObject));
+      return;
+    }
+
+    if (_originalResizeRect == null) return;
 
     final bool isShiftPressed = HardwareKeyboard.instance.isShiftPressed;
 
     if (object is ArrowObject) {
-      final start = (object as dynamic).start;
-      final end = (object as dynamic).end;
-      final pathType = (object as dynamic).pathType;
+      // Use resolved positions so handles track the visual arrow endpoints
+      final resolved = _resolveArrowEndpoints(object);
+      final start = resolved.start;
+      final end = resolved.end;
+      final pathType = object.pathType;
 
       if (pathType == LinkPathType.orthogonal) {
         Offset newStart = start;
@@ -508,14 +1037,23 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
           start: newStart,
           end: newEnd,
           midPoint: cornerDelta,
+          // Detach from objects when user manually repositions endpoints
+          clearStartAttachment: handle == Handle.arrowStart,
+          clearEndAttachment: handle == Handle.arrowEnd,
         );
         _canvasBloc.add(DrawingObjectUpdated(updatedObject));
       } else {
         if (handle == Handle.arrowStart) {
-          final updatedObject = object.copyWith(start: worldPos);
+          final updatedObject = object.copyWith(
+            start: worldPos,
+            clearStartAttachment: true,
+          );
           _canvasBloc.add(DrawingObjectUpdated(updatedObject));
         } else if (handle == Handle.arrowEnd) {
-          final updatedObject = object.copyWith(end: worldPos);
+          final updatedObject = object.copyWith(
+            end: worldPos,
+            clearEndAttachment: true,
+          );
           _canvasBloc.add(DrawingObjectUpdated(updatedObject));
         } else if (handle == Handle.midPoint) {
           final midPoint = (worldPos * 2) - (start * 0.5) - (end * 0.5);
@@ -542,7 +1080,6 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     } else if (object is RectangleObject ||
         object is CircleObject ||
         object is FigureObject ||
-        object is TextObject ||
         object is SvgObject) {
       Rect oldRect = object.rect;
       Offset anchor;
@@ -564,9 +1101,11 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
       }
 
       Rect newRect;
-      if (isShiftPressed &&
-          _originalResizeRect!.width > 0 &&
-          _originalResizeRect!.height > 0) {
+      final bool lockAspect = object is SvgObject ||
+          (isShiftPressed &&
+              _originalResizeRect!.width > 0 &&
+              _originalResizeRect!.height > 0);
+      if (lockAspect) {
         final aspectRatio =
             _originalResizeRect!.width / _originalResizeRect!.height;
         newRect = _resizeWithAspectRatio(
@@ -578,16 +1117,7 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
         newRect = Rect.fromPoints(anchor, worldPos);
       }
 
-      dynamic updatedObject;
-      if (object is TextObject) {
-        updatedObject = object.copyWith(
-          rect: newRect,
-          style: object.style.copyWith(fontSize: newRect.height * 0.8),
-        );
-      } else {
-        updatedObject = (object as dynamic).copyWith(rect: newRect);
-      }
-
+      final updatedObject = (object as dynamic).copyWith(rect: newRect);
       if (updatedObject != null) {
         _canvasBloc.add(DrawingObjectUpdated(updatedObject));
       }
@@ -654,7 +1184,9 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
 
   void _finalizeAreaSelection() {
     final selectedArea = _selectionArea.normalize;
-    if (selectedArea.size.longestSide > 10.0 / _canvasBloc.state.viewportZoom) {
+    final tapSlop =
+        (_isMobile ? 24.0 : 10.0) / _canvasBloc.state.viewportZoom;
+    if (selectedArea.size.longestSide > tapSlop) {
       final holdSelection =
           HardwareKeyboard.instance.isControlPressed ||
           HardwareKeyboard.instance.isShiftPressed;
@@ -799,19 +1331,21 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
 
   String? _findHitObject(Offset worldPos) {
     final canvasState = _canvasBloc.state;
-    final tolerance = 8.0 / canvasState.viewportZoom;
+    final tolerance =
+        (_isMobile ? 16.0 : 8.0) / canvasState.viewportZoom;
 
     for (final obj in canvasState.drawingObjects.values.toList().reversed) {
       if (obj is ArrowObject) {
-        final start = (obj as dynamic).start;
-        final end = (obj as dynamic).end;
+        final resolved = _resolveArrowEndpoints(obj);
+        final start = resolved.start;
+        final end = resolved.end;
         final dx = end.dx - start.dx;
         final dy = end.dy - start.dy;
         final cornerPoint = (dx.abs() > dy.abs())
             ? Offset(end.dx, start.dy)
             : Offset(start.dx, end.dy);
 
-        final controlPoint = (obj as dynamic).midPoint ?? cornerPoint;
+        final controlPoint = obj.midPoint ?? cornerPoint;
 
         Path path;
         if (obj.pathType == LinkPathType.orthogonal) {
@@ -856,8 +1390,33 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
         if (isPointNearPath(path, worldPos, tolerance)) {
           return obj.id;
         }
-      } else if (obj.rect.contains(worldPos)) {
-        return obj.id;
+      } else if (obj is ReferencePointObject) {
+        final hitRadius = (obj.radius + tolerance);
+        if ((worldPos - obj.position).distance < hitRadius) {
+          return obj.id;
+        }
+      } else if (obj is SvgObject && obj.rotation != 0.0) {
+        // For rotated SVGs, transform the hit point into unrotated space
+        final center = obj.rect.center;
+        final cosR = cos(-obj.rotation);
+        final sinR = sin(-obj.rotation);
+        final dx = worldPos.dx - center.dx;
+        final dy = worldPos.dy - center.dy;
+        final localPos = Offset(
+          center.dx + dx * cosR - dy * sinR,
+          center.dy + dx * sinR + dy * cosR,
+        );
+        final hitRect =
+            _isMobile ? obj.rect.inflate(tolerance) : obj.rect;
+        if (hitRect.contains(localPos)) {
+          return obj.id;
+        }
+      } else {
+        final hitRect =
+            _isMobile ? obj.rect.inflate(tolerance) : obj.rect;
+        if (hitRect.contains(worldPos)) {
+          return obj.id;
+        }
       }
     }
 
@@ -925,7 +1484,8 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     );
     if (worldPos == null) return;
 
-    final handleHitAreaRadius = 10.0 / canvasState.viewportZoom;
+    final handleHitAreaRadius =
+        (_isMobile ? 14.0 : 10.0) / canvasState.viewportZoom;
 
     for (final objectId in selectionState.selectedDrawingObjectIds) {
       final obj = canvasState.drawingObjects[objectId];
@@ -934,16 +1494,71 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
       if (obj is RectangleObject ||
           obj is CircleObject ||
           obj is FigureObject ||
-          obj is TextObject ||
           obj is SvgObject ||
           obj is PencilStrokeObject) {
         final selectionRect = obj.rect.inflate(4.0 / canvasState.viewportZoom);
+
+        // On mobile, skip corner-handle detection when the touch is deep inside
+        // the object body — the user likely wants to drag, not resize.
+        if (_isMobile) {
+          final edgeInset = handleHitAreaRadius * 2.5;
+          final innerRect = selectionRect.deflate(edgeInset);
+          if (innerRect.width > 0 && innerRect.height > 0) {
+            // For rotated SvgObjects, check in local (unrotated) coordinates
+            Offset testPos = worldPos;
+            if (obj is SvgObject && obj.rotation != 0.0) {
+              final center = obj.rect.center;
+              final cosR = cos(-obj.rotation);
+              final sinR = sin(-obj.rotation);
+              final dx = worldPos.dx - center.dx;
+              final dy = worldPos.dy - center.dy;
+              testPos = Offset(
+                center.dx + dx * cosR - dy * sinR,
+                center.dy + dx * sinR + dy * cosR,
+              );
+            }
+            if (innerRect.contains(testPos)) {
+              // Touch is inside the body — skip handle detection for this object
+              continue;
+            }
+          }
+        }
+
+        // For SvgObject, only rotation handle — no corner resize handles.
+        if (obj is SvgObject) {
+          final rotateHandleOffset = 30.0 / canvasState.viewportZoom;
+          final topCenter = Offset(selectionRect.center.dx, selectionRect.top);
+          // Transform the handle position by the object's rotation
+          final center = obj.rect.center;
+          final cosR = cos(obj.rotation);
+          final sinR = sin(obj.rotation);
+          final localHandle = topCenter - Offset(0, rotateHandleOffset);
+          final dx = localHandle.dx - center.dx;
+          final dy = localHandle.dy - center.dy;
+          final rotatedHandle = Offset(
+            center.dx + dx * cosR - dy * sinR,
+            center.dy + dx * sinR + dy * cosR,
+          );
+          if ((worldPos - rotatedHandle).distance < handleHitAreaRadius) {
+            if (_hoveredHandle.objectId != objectId ||
+                _hoveredHandle.handle != Handle.rotate) {
+              setState(
+                () => _hoveredHandle = (objectId: objectId, handle: Handle.rotate),
+              );
+            }
+            return;
+          }
+          // Skip corner handles for SvgObject — size is controlled via slider.
+          continue;
+        }
+
         final handles = {
           Handle.topLeft: selectionRect.topLeft,
           Handle.topRight: selectionRect.topRight,
           Handle.bottomRight: selectionRect.bottomRight,
           Handle.bottomLeft: selectionRect.bottomLeft,
         };
+
         for (final entry in handles.entries) {
           if ((worldPos - entry.value).distance < handleHitAreaRadius) {
             if (_hoveredHandle.objectId != objectId ||
@@ -956,9 +1571,10 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
           }
         }
       } else if (obj is ArrowObject) {
-        final start = (obj as dynamic).start;
-        final end = (obj as dynamic).end;
-        final midPoint = (obj as dynamic).midPoint ?? (start + end) / 2.0;
+        final resolved = _resolveArrowEndpoints(obj);
+        final start = resolved.start;
+        final end = resolved.end;
+        final midPoint = obj.midPoint ?? (start + end) / 2.0;
 
         final dx = end.dx - start.dx;
         final dy = end.dy - start.dy;
@@ -1058,6 +1674,17 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
 
   void _beginTextEditing({TextObject? existingObject, Offset? at}) {
     if (existingObject == null && at == null) return;
+
+    // Check if the host app wants to handle text input via callback
+    final config = FlDrawConfig.of(context);
+    if (config?.onTextInputRequested != null) {
+      _beginTextEditingViaCallback(
+        callback: config!.onTextInputRequested!,
+        existingObject: existingObject,
+        at: at,
+      );
+      return;
+    }
 
     final TextObject object;
     if (existingObject != null) {
@@ -1186,6 +1813,61 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     Overlay.of(context).insert(overlayEntry);
   }
 
+  /// Handle text input via the host app's callback (e.g. a dictation bottom sheet).
+  Future<void> _beginTextEditingViaCallback({
+    required Future<String?> Function(Offset position, String? existingText)
+        callback,
+    TextObject? existingObject,
+    Offset? at,
+  }) async {
+    final bool isNew = existingObject == null;
+    final position = existingObject?.rect.topLeft ?? at!;
+    final existingText = existingObject?.text;
+
+    final result = await callback(position, isNew ? null : existingText);
+
+    if (!mounted) return;
+
+    if (result == null || result.trim().isEmpty) {
+      // Cancelled — nothing to do (object wasn't created yet for new, leave
+      // existing unchanged for edits)
+      return;
+    }
+
+    // Determine text color from the editor style
+    final strokeColor =
+        widget.style.defaultStrokeColor ?? Colors.white;
+    const fontSize = 12.0;
+    final textStyle = TextStyle(fontSize: fontSize, color: strokeColor);
+
+    // Fixed icon size for note icons (24x24 world units)
+    const double iconSize = 24.0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (isNew) {
+      final newObject = TextObject(
+        id: const Uuid().v4(),
+        rect: Rect.fromLTWH(position.dx, position.dy, iconSize, iconSize),
+        text: result,
+        style: textStyle,
+        timestamp: now,
+      );
+      _canvasBloc.add(DrawingObjectAdded(newObject));
+      _selectionBloc.add(SelectionReplaced(drawingObjectIds: {newObject.id}));
+    } else {
+      final obj = existingObject!;
+      final updated = obj.copyWith(
+        text: result,
+        style: textStyle,
+        rect: Rect.fromLTWH(obj.rect.left, obj.rect.top, iconSize, iconSize),
+        timestamp: now,
+      );
+      _canvasBloc.add(DrawingObjectUpdated(updated));
+      _selectionBloc
+          .add(SelectionReplaced(drawingObjectIds: {obj.id}));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<CanvasBloc, CanvasState>(
@@ -1202,7 +1884,7 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
                           key: kNodeEditorWidgetKey,
                           canvasState: canvasState,
                           selectionState: selectionState,
-                          style: const FlDrawEditorStyle(),
+                          style: widget.style,
                           gridShader: gridShader,
                           tempDrawingObject: _tempDrawingObject,
                           selectionArea: _selectionArea,
@@ -1213,10 +1895,12 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
                   ),
                 );
 
-                final platform = PlatformInfoImpl();
-                if (platform.isAndroid || platform.isIOS) {
+                if (_isMobile) {
                   return GestureDetector(
-                    onTap: () => _selectionBloc.add(SelectionCleared()),
+                    behavior: HitTestBehavior.opaque,
+                    onScaleStart: _onMobileScaleStart,
+                    onScaleUpdate: _onMobileScaleUpdate,
+                    onScaleEnd: _onMobileScaleEnd,
                     child: canvasChild,
                   );
                 }
@@ -1309,6 +1993,11 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
                       LogicalKeyboardKey.keyV,
                       "Select Arrow Tool",
                       () => _toolBloc.add(const ToolSelected(EditorTool.arrow)),
+                    ),
+                    KeyAction(
+                      LogicalKeyboardKey.keyP,
+                      "Select Reference Point Tool",
+                      () => _toolBloc.add(const ToolSelected(EditorTool.referencePoint)),
                     ),
                     KeyAction(
                       LogicalKeyboardKey.keyR,
@@ -1409,6 +2098,8 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
           return SystemMouseCursors.resizeColumn;
         case Handle.midPoint:
           return SystemMouseCursors.grab;
+        case Handle.rotate:
+          return SystemMouseCursors.click;
         default:
           return SystemMouseCursors.basic;
       }
