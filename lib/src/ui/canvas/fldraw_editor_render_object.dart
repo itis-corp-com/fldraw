@@ -900,8 +900,9 @@ class FlDrawEditorRenderBox extends RenderBox
           );
 
           final shortSide = obj.rect.shortestSide;
+          // ~3/4 of the previous size (0.32 -> 0.24, clamps scaled to match).
           final badgeDiameter =
-              (shortSide * 0.32).clamp(16.0 / zoom, 40.0 / zoom);
+              (shortSide * 0.24).clamp(12.0 / zoom, 30.0 / zoom);
           final badgeRadius = badgeDiameter / 2;
           // Push the badge OUTWARD from the top-left corner (along the
           // centre→corner direction) so it sits just off the asset, not on it.
