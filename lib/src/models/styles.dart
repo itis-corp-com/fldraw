@@ -209,11 +209,6 @@ class FlDrawEditorStyle {
   /// small label below the asset. Hosts toggle this on/off.
   final bool showAssetLabels;
 
-  /// When true, line-art assets (with a synthesised [SvgObject.bodyImage]) are
-  /// drawn as a solid filled body with line detail over it; when false they
-  /// render as the original wireframe/line art.
-  final bool filledAssets;
-
   const FlDrawEditorStyle({
     this.decoration = const BoxDecoration(color: Colors.black12),
     this.padding = const EdgeInsets.all(8.0),
@@ -224,7 +219,6 @@ class FlDrawEditorStyle {
     this.metersPerWorldUnit,
     this.labelColor,
     this.showAssetLabels = false,
-    this.filledAssets = false,
   });
 
   FlDrawEditorStyle copyWith({
@@ -237,7 +231,6 @@ class FlDrawEditorStyle {
     double? metersPerWorldUnit,
     Color? labelColor,
     bool? showAssetLabels,
-    bool? filledAssets,
   }) {
     return FlDrawEditorStyle(
       decoration: decoration ?? this.decoration,
@@ -249,7 +242,6 @@ class FlDrawEditorStyle {
       metersPerWorldUnit: metersPerWorldUnit ?? this.metersPerWorldUnit,
       labelColor: labelColor ?? this.labelColor,
       showAssetLabels: showAssetLabels ?? this.showAssetLabels,
-      filledAssets: filledAssets ?? this.filledAssets,
     );
   }
 }

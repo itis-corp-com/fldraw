@@ -791,13 +791,13 @@ class FlDrawEditorRenderBox extends RenderBox
 
           final svgBounds = Rect.fromLTWH(0, 0, svgSize.width, svgSize.height);
           final bodyImg = obj.bodyImage;
-          final filled = style.filledAssets && bodyImg != null;
+          final tint = obj.tintColor;
 
-          if (filled) {
-            // Filled style: a solid body (the chosen colour, or white by
-            // default) with the line art laid over it — WHITE detail on a
+          if (!obj.wireframe && bodyImg != null) {
+            // FILLED LINE-ART (cars/trucks): a solid body (chosen colour, or
+            // white by default) with the line art over it — WHITE detail on a
             // coloured body, dark detail on a white body.
-            final bodyColor = obj.tintColor ?? const Color(0xFFFFFFFF);
+            final bodyColor = tint ?? const Color(0xFFFFFFFF);
             canvas.drawImageRect(
               bodyImg,
               Rect.fromLTWH(
@@ -808,7 +808,7 @@ class FlDrawEditorRenderBox extends RenderBox
                 ..filterQuality = FilterQuality.medium
                 ..isAntiAlias = true,
             );
-            final lineColor = obj.tintColor != null
+            final lineColor = tint != null
                 ? const Color(0xFFFFFFFF)
                 : const Color(0xFF222222);
             canvas.saveLayer(
@@ -818,17 +818,35 @@ class FlDrawEditorRenderBox extends RenderBox
             );
             canvas.drawPicture(obj.pictureInfo!.picture);
             canvas.restore();
+          } else if (!obj.wireframe && tint != null) {
+            // FILLED FIGURE (pedestrian etc.): already a solid-fill SVG with no
+            // enclosed area to synthesise, so recolour the whole figure — map
+            // luminance (white -> chosen colour, dark -> a darker shade of it)
+            // so it reads as a solid coloured body, matching the vehicles.
+            final argb = tint.toARGB32();
+            final r = ((argb >> 16) & 0xFF).toDouble();
+            final g = ((argb >> 8) & 0xFF).toDouble();
+            final b = (argb & 0xFF).toDouble();
+            const k = 0.35; // dark pixels -> k * colour
+            double slope(double c) => c * (1.0 - k) / 255.0;
+            double offset(double c) => k * c;
+            final solidPaint = Paint()
+              ..colorFilter = ColorFilter.matrix(<double>[
+                slope(r), 0, 0, 0, offset(r), //
+                0, slope(g), 0, 0, offset(g), //
+                0, 0, slope(b), 0, offset(b), //
+                0, 0, 0, 1, 0, //
+              ]);
+            canvas.saveLayer(svgBounds, solidPaint);
+            canvas.drawPicture(obj.pictureInfo!.picture);
+            canvas.restore();
           } else {
-            // Wireframe (original): white-preserving luminance ramp — the
-            // assets are grayscale line/fill art (dark ~#4d4d4d/#080908 shapes,
-            // white interior detail). A flat srcIn tint would paint the whole
-            // silhouette one colour and lose the white detail. Map luminance
-            // with a per-channel affine ramp through (dark -> chosen colour)
-            // and (white -> white): filled figures become a coloured body with
-            // white detail, and vehicle line-art becomes coloured outlines.
-            final tint = obj.tintColor ?? style.svgTintColor;
-            if (tint != null) {
-              final argb = tint.toARGB32();
+            // WIREFRAME (per-object), or an untinted filled figure: the
+            // white-preserving luminance ramp — dark ink -> chosen colour,
+            // white detail stays white; line-art becomes coloured outlines.
+            final rampTint = tint ?? style.svgTintColor;
+            if (rampTint != null) {
+              final argb = rampTint.toARGB32();
               final r = ((argb >> 16) & 0xFF).toDouble();
               final g = ((argb >> 8) & 0xFF).toDouble();
               final b = (argb & 0xFF).toDouble();

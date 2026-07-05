@@ -684,6 +684,9 @@ class SvgObject extends DrawingObject {
   final Color? tintColor;
   /// Damage/impact marks as relative positions (0,0)=topLeft, (1,1)=bottomRight.
   final List<Offset> damageMarks;
+  /// When true this asset renders as the original wireframe/line art; when
+  /// false (default) it renders filled. Per-object so each unit can differ.
+  final bool wireframe;
 
   SvgObject({
     required super.id,
@@ -696,6 +699,7 @@ class SvgObject extends DrawingObject {
     this.annotation = '',
     this.tintColor,
     this.damageMarks = const [],
+    this.wireframe = false,
     super.isSelected,
   }) : _rect = rect;
 
@@ -718,6 +722,7 @@ class SvgObject extends DrawingObject {
     'isSelected': isSelected,
     if (damageMarks.isNotEmpty)
       'damageMarks': damageMarks.map((o) => [o.dx, o.dy]).toList(),
+    if (wireframe) 'wireframe': true,
   };
 
   factory SvgObject.fromJson(Map<String, dynamic> json) {
@@ -733,6 +738,7 @@ class SvgObject extends DrawingObject {
       damageMarks: (json['damageMarks'] as List<dynamic>?)
           ?.map((e) => Offset((e[0] as num).toDouble(), (e[1] as num).toDouble()))
           .toList() ?? const [],
+      wireframe: json['wireframe'] as bool? ?? false,
     );
   }
 
@@ -745,6 +751,7 @@ class SvgObject extends DrawingObject {
     Color? tintColor,
     bool? isSelected,
     List<Offset>? damageMarks,
+    bool? wireframe,
   }) {
     return SvgObject(
       id: id,
@@ -758,6 +765,7 @@ class SvgObject extends DrawingObject {
       tintColor: tintColor ?? this.tintColor,
       isSelected: isSelected ?? this.isSelected,
       damageMarks: damageMarks ?? this.damageMarks,
+      wireframe: wireframe ?? this.wireframe,
     );
   }
 }
