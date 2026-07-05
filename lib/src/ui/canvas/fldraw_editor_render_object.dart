@@ -903,10 +903,13 @@ class FlDrawEditorRenderBox extends RenderBox
           final badgeDiameter =
               (shortSide * 0.32).clamp(16.0 / zoom, 40.0 / zoom);
           final badgeRadius = badgeDiameter / 2;
-          final badgeCenter = Offset(
-            brWorld.dx - badgeRadius * 0.3,
-            brWorld.dy - badgeRadius * 0.3,
-          );
+          // Push the badge OUTWARD from the bottom-right corner (along the
+          // centre→corner direction) so it sits just off the asset, not on it.
+          final outward = brWorld - rectCenter;
+          final outLen = outward.distance;
+          final outDir =
+              outLen > 0 ? outward / outLen : const Offset(0.707, 0.707);
+          final badgeCenter = brWorld + outDir * (badgeRadius * 0.8);
 
           final badgeFill = Paint()..color = const Color(0xFFFFFFFF);
           final badgeBorder = Paint()
