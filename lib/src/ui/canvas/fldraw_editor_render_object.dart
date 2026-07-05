@@ -937,37 +937,39 @@ class FlDrawEditorRenderBox extends RenderBox
             ),
           );
 
-          // Annotation text below the badge — matches vertex annotation style
-          if (obj.annotation.isNotEmpty) {
-            final annotationColor =
-                style.defaultStrokeColor ?? const Color(0xFFFFFFFF);
-            final annotationFontSize = 10.0 / zoom;
-            final annotationSpan = TextSpan(
-              text: obj.annotation,
-              style: TextStyle(
-                color: annotationColor,
-                fontSize: annotationFontSize,
-                fontWeight: FontWeight.w500,
-              ),
+          // Type-name label below the asset (bottom-centre), when toggled on.
+          // Upright, dark text on a light backdrop so it reads on the white
+          // blueprint (and on darker areas).
+          if (style.showAssetLabels && obj.annotation.isNotEmpty) {
+            final bcLocal = Offset(0, obj.rect.bottom - rectCenter.dy);
+            final bcWorld = Offset(
+              rectCenter.dx + bcLocal.dx * cosR - bcLocal.dy * sinR,
+              rectCenter.dy + bcLocal.dx * sinR + bcLocal.dy * cosR,
             );
             final annotationPainter = TextPainter(
-              text: annotationSpan,
+              text: TextSpan(
+                text: obj.annotation,
+                style: TextStyle(
+                  color: const Color(0xDD000000),
+                  fontSize: 10.0 / zoom,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
               textDirection: TextDirection.ltr,
             )..layout();
-            // Centered below the badge with background for readability
             final textOffset = Offset(
-              badgeCenter.dx - annotationPainter.width / 2,
-              badgeCenter.dy + badgeRadius + 2.0 / zoom,
+              bcWorld.dx - annotationPainter.width / 2,
+              bcWorld.dy + 3.0 / zoom,
             );
             final bgRect = Rect.fromLTWH(
-              textOffset.dx - 2.0 / zoom,
+              textOffset.dx - 3.0 / zoom,
               textOffset.dy - 1.0 / zoom,
-              annotationPainter.width + 4.0 / zoom,
+              annotationPainter.width + 6.0 / zoom,
               annotationPainter.height + 2.0 / zoom,
             );
             canvas.drawRRect(
-              RRect.fromRectAndRadius(bgRect, Radius.circular(2.0 / zoom)),
-              Paint()..color = Colors.black.withValues(alpha: 0.5),
+              RRect.fromRectAndRadius(bgRect, Radius.circular(3.0 / zoom)),
+              Paint()..color = const Color(0xCCFFFFFF),
             );
             annotationPainter.paint(canvas, textOffset);
           }
