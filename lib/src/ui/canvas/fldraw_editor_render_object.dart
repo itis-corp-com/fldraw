@@ -946,20 +946,23 @@ class FlDrawEditorRenderBox extends RenderBox
               rectCenter.dx + bcLocal.dx * cosR - bcLocal.dy * sinR,
               rectCenter.dy + bcLocal.dx * sinR + bcLocal.dy * cosR,
             );
+            // Architectural style: small, UPPERCASE, letter-spaced.
             final annotationPainter = TextPainter(
               text: TextSpan(
-                text: obj.annotation,
+                text: obj.annotation.toUpperCase(),
                 style: TextStyle(
-                  color: const Color(0xDD000000),
-                  fontSize: 10.0 / zoom,
-                  fontWeight: FontWeight.w600,
+                  color: const Color(0xCC000000),
+                  fontSize: 8.5 / zoom,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.7 / zoom,
                 ),
               ),
               textDirection: TextDirection.ltr,
             )..layout();
+            // Sit clearly below the asset + its number badge.
             final textOffset = Offset(
               bcWorld.dx - annotationPainter.width / 2,
-              bcWorld.dy + 3.0 / zoom,
+              bcWorld.dy + badgeRadius + 6.0 / zoom,
             );
             final bgRect = Rect.fromLTWH(
               textOffset.dx - 3.0 / zoom,
@@ -968,8 +971,8 @@ class FlDrawEditorRenderBox extends RenderBox
               annotationPainter.height + 2.0 / zoom,
             );
             canvas.drawRRect(
-              RRect.fromRectAndRadius(bgRect, Radius.circular(3.0 / zoom)),
-              Paint()..color = const Color(0xCCFFFFFF),
+              RRect.fromRectAndRadius(bgRect, Radius.circular(2.0 / zoom)),
+              Paint()..color = const Color(0xB3FFFFFF),
             );
             annotationPainter.paint(canvas, textOffset);
           }
