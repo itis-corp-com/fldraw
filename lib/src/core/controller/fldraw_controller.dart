@@ -152,6 +152,13 @@ class FlDrawControllerImpl implements FlDrawController {
     _canvasBloc!.add(DrawingObjectAdded(object));
   }
 
+  /// Updates an existing [DrawingObject] on the canvas.
+  @override
+  void updateDrawingObject(DrawingObject object) {
+    _assertIsInitialized();
+    _canvasBloc!.add(DrawingObjectUpdated(object));
+  }
+
   /// Removes a set of objects from the canvas by their IDs.
   @override
   void removeObjects({
@@ -211,6 +218,13 @@ class FlDrawControllerImpl implements FlDrawController {
   void zoom(double newZoom) {
     _assertIsInitialized();
     _canvasBloc!.add(CanvasZoomed(newZoom.clamp(0.1, 10.0)));
+  }
+
+  /// Set both zoom and offset atomically in a single bloc event.
+  @override
+  void setViewport(double zoom, Offset offset) {
+    _assertIsInitialized();
+    _canvasBloc!.add(ViewportSet(zoom: zoom.clamp(0.1, 10.0), offset: offset));
   }
 
   /// Zooms in by a fixed factor.

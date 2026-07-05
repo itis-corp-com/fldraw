@@ -14,6 +14,7 @@ class FlDrawCanvas extends StatelessWidget {
   final FlNodeHeaderBuilder? headerBuilder;
   final FlNodeBuilder? nodeBuilder;
   final bool debug;
+  final FlDrawEditorStyle? style;
 
   const FlDrawCanvas({
     super.key,
@@ -23,21 +24,23 @@ class FlDrawCanvas extends StatelessWidget {
     this.headerBuilder,
     this.nodeBuilder,
     this.debug = false,
+    this.style,
   });
 
   @override
   Widget build(BuildContext context) {
-    const FlDrawEditorStyle style = FlDrawEditorStyle();
+    final FlDrawEditorStyle effectiveStyle = style ?? const FlDrawEditorStyle();
 
     final Widget editor = Container(
-      decoration: style.decoration,
-      padding: style.padding,
+      decoration: effectiveStyle.decoration,
+      padding: effectiveStyle.padding,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Positioned.fill(
             child: FlDrawEditorDataLayer(
               fragmentShader: 'packages/fldraw/shaders/grid.frag',
+              style: effectiveStyle,
               headerBuilder: headerBuilder,
               nodeBuilder: nodeBuilder,
             ),

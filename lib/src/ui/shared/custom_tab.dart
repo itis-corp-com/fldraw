@@ -38,6 +38,8 @@ class CustomTabs extends StatelessWidget {
   final ValueChanged<int> onChanged;
   final List<TabChild> children;
   final EdgeInsetsGeometry? padding;
+  final Color? backgroundColor;
+  final Color? selectedColor;
 
   const CustomTabs({
     super.key,
@@ -45,6 +47,8 @@ class CustomTabs extends StatelessWidget {
     required this.onChanged,
     required this.children,
     this.padding,
+    this.backgroundColor,
+    this.selectedColor,
   });
 
   Widget _childBuilder(
@@ -71,7 +75,9 @@ class CustomTabs extends StatelessWidget {
               ) *
                   scaling,
           decoration: BoxDecoration(
-            color: i == index ? theme.colorScheme.background : null,
+            color: i == index
+                ? (selectedColor ?? theme.colorScheme.background)
+                : null,
             borderRadius: BorderRadius.circular(
               theme.radiusMd,
             ),
@@ -94,7 +100,7 @@ class CustomTabs extends StatelessWidget {
       builder: (context, children) {
         return Container(
           decoration: BoxDecoration(
-            color: theme.colorScheme.muted,
+            color: backgroundColor ?? theme.colorScheme.muted,
             borderRadius: BorderRadius.circular(theme.radiusLg),
           ),
           padding: const EdgeInsets.all(4) * scaling,

@@ -15,6 +15,7 @@ export 'package:fldraw/src/ui/shared/fldraw.dart';
 export 'package:fldraw/src/models/drawing_entities.dart'
     show
         EditorTool,
+        Handle,
         DrawingObject,
         CircleObject,
         RectangleObject,
@@ -23,7 +24,10 @@ export 'package:fldraw/src/models/drawing_entities.dart'
         PencilStrokeObject,
         FigureObject,
         TextObject,
-        SvgObject;
+        SvgObject,
+        ReferencePointObject,
+        LinkPathType,
+        VertexAnnotation;
 
 export 'package:fldraw/src/models/entities.dart'
     show NodeState, NodeInstance, NodeInfo;

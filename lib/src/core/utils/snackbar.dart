@@ -20,13 +20,17 @@ void showNodeEditorSnackbar(String message, SnackbarType type) {
       backgroundColor = Colors.blue;
       break;
   }
-  if (kNodeEditorWidgetKey.currentContext != null) {
-    ScaffoldMessenger.of(kNodeEditorWidgetKey.currentContext!).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: backgroundColor,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+  final context = kNodeEditorWidgetKey.currentContext;
+  if (context != null) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: backgroundColor,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 }

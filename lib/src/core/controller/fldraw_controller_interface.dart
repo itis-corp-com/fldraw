@@ -32,6 +32,8 @@ abstract class FlDrawController {
 
   void addDrawingObject(DrawingObject object);
 
+  void updateDrawingObject(DrawingObject object);
+
   void removeObjects({Set<String> nodeIds, Set<String> drawingObjectIds});
 
   void removeSelectedObjects();
@@ -47,6 +49,9 @@ abstract class FlDrawController {
   void pan(Offset delta);
 
   void zoom(double newZoom);
+
+  /// Set both zoom and offset atomically (no race conditions).
+  void setViewport(double zoom, Offset offset);
 
   void zoomIn([double factor = 1.2]);
 

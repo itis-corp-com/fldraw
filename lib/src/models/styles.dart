@@ -198,6 +198,13 @@ class FlDrawEditorStyle {
   /// measurements. When null, falls back to a default approximation.
   final double? metersPerWorldUnit;
 
+  /// Color used for measurement and vertex-annotation text. Hosts can
+  /// lerp this from white→black based on any background-blend signal
+  /// (e.g. an opacity slider that fades a diagram render onto a
+  /// satellite image) so labels stay legible. Falls back to
+  /// [defaultStrokeColor] or white when null.
+  final Color? labelColor;
+
   const FlDrawEditorStyle({
     this.decoration = const BoxDecoration(color: Colors.black12),
     this.padding = const EdgeInsets.all(8.0),
@@ -206,6 +213,7 @@ class FlDrawEditorStyle {
     this.svgTintColor,
     this.defaultStrokeColor,
     this.metersPerWorldUnit,
+    this.labelColor,
   });
 
   FlDrawEditorStyle copyWith({
@@ -216,6 +224,7 @@ class FlDrawEditorStyle {
     Color? svgTintColor,
     Color? defaultStrokeColor,
     double? metersPerWorldUnit,
+    Color? labelColor,
   }) {
     return FlDrawEditorStyle(
       decoration: decoration ?? this.decoration,
@@ -225,6 +234,7 @@ class FlDrawEditorStyle {
       svgTintColor: svgTintColor ?? this.svgTintColor,
       defaultStrokeColor: defaultStrokeColor ?? this.defaultStrokeColor,
       metersPerWorldUnit: metersPerWorldUnit ?? this.metersPerWorldUnit,
+      labelColor: labelColor ?? this.labelColor,
     );
   }
 }

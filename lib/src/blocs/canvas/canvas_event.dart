@@ -35,6 +35,20 @@ class CanvasZoomed extends CanvasEvent {
   List<Object> get props => [zoom];
 }
 
+class ViewportSet extends CanvasEvent {
+  final double zoom;
+  final Offset offset;
+
+  const ViewportSet({required this.zoom, required this.offset})
+      : super(isUndoable: false);
+
+  @override
+  String get description => 'Set Viewport';
+
+  @override
+  List<Object> get props => [zoom, offset];
+}
+
 // --- Object Manipulation Events ---
 class NodeAdded extends CanvasEvent {
   final NodeInstance node;

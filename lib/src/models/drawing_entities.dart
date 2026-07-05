@@ -173,6 +173,10 @@ class ArrowObject extends DrawingObject {
   final ObjectAttachment? endAttachment;
   final Color? strokeColor;
   final Map<String, VertexAnnotation> vertexAnnotations;
+  /// When true, the renderer paints a distance label at the arrow's
+  /// midpoint. Default true; flipped via the host's selection action
+  /// bar.
+  final bool showMeasurement;
 
   ArrowObject({
     required super.id,
@@ -185,6 +189,7 @@ class ArrowObject extends DrawingObject {
     this.endAttachment,
     this.strokeColor,
     this.vertexAnnotations = const {},
+    this.showMeasurement = true,
   });
 
   @override
@@ -249,6 +254,7 @@ class ArrowObject extends DrawingObject {
     'strokeColor': strokeColor?.toARGB32(),
     if (vertexAnnotations.isNotEmpty)
       'vertexAnnotations': vertexAnnotations.map((k, v) => MapEntry(k, v.toJson())),
+    'showMeasurement': showMeasurement,
   };
 
   factory ArrowObject.fromJson(Map<String, dynamic> json) {
@@ -265,6 +271,8 @@ class ArrowObject extends DrawingObject {
       startAttachment: json['startAttachment'] != null ? ObjectAttachment.fromJson(json['startAttachment']) : null,
       endAttachment: json['endAttachment'] != null ? ObjectAttachment.fromJson(json['endAttachment']) : null,
       strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
+      // Older diagrams default true so existing arrows start measuring.
+      showMeasurement: json['showMeasurement'] as bool? ?? true,
       vertexAnnotations: annotationsJson?.map(
         (k, v) => MapEntry(k, VertexAnnotation.fromJson(v as Map<String, dynamic>)),
       ) ?? const {},
@@ -284,6 +292,7 @@ class ArrowObject extends DrawingObject {
     bool clearStartAttachment = false,
     bool clearEndAttachment = false,
     Map<String, VertexAnnotation>? vertexAnnotations,
+    bool? showMeasurement,
   }) {
     return ArrowObject(
       id: id,
@@ -300,6 +309,7 @@ class ArrowObject extends DrawingObject {
           : (endAttachment ?? this.endAttachment),
       strokeColor: strokeColor ?? this.strokeColor,
       vertexAnnotations: vertexAnnotations ?? this.vertexAnnotations,
+      showMeasurement: showMeasurement ?? this.showMeasurement,
     );
   }
 }
@@ -311,6 +321,11 @@ class LineObject extends DrawingObject {
   final LinkPathType pathType;
   final Color? strokeColor;
   final Map<String, VertexAnnotation> vertexAnnotations;
+  /// When true, the renderer paints a distance label at the line's
+  /// midpoint using the host-supplied `metersPerWorldUnit` scale. The
+  /// host (kapix) defaults this to true on new lines and lets the user
+  /// toggle it via the selection action bar.
+  final bool showMeasurement;
 
   LineObject({
     required super.id,
@@ -320,6 +335,7 @@ class LineObject extends DrawingObject {
     this.pathType = LinkPathType.straight,
     this.strokeColor,
     this.vertexAnnotations = const {},
+    this.showMeasurement = true,
     super.isSelected,
   });
 
@@ -378,6 +394,7 @@ class LineObject extends DrawingObject {
     'strokeColor': strokeColor?.toARGB32(),
     if (vertexAnnotations.isNotEmpty)
       'vertexAnnotations': vertexAnnotations.map((k, v) => MapEntry(k, v.toJson())),
+    'showMeasurement': showMeasurement,
   };
 
   factory LineObject.fromJson(Map<String, dynamic> json) {
@@ -392,6 +409,10 @@ class LineObject extends DrawingObject {
       isSelected: json['isSelected'] ?? false,
       pathType: LinkPathType.values.byName(json['pathType'] ?? 'straight'),
       strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
+      // Older diagrams without this field default to true so existing
+      // lines start measuring on next open. Officers can flip it off
+      // per-line via the selection action bar.
+      showMeasurement: json['showMeasurement'] as bool? ?? true,
       vertexAnnotations: annotationsJson?.map(
         (k, v) => MapEntry(k, VertexAnnotation.fromJson(v as Map<String, dynamic>)),
       ) ?? const {},
@@ -407,6 +428,7 @@ class LineObject extends DrawingObject {
     LinkPathType? pathType,
     Color? strokeColor,
     Map<String, VertexAnnotation>? vertexAnnotations,
+    bool? showMeasurement,
   }) {
     return LineObject(
       id: id,
@@ -417,6 +439,7 @@ class LineObject extends DrawingObject {
       pathType: pathType ?? this.pathType,
       strokeColor: strokeColor ?? this.strokeColor,
       vertexAnnotations: vertexAnnotations ?? this.vertexAnnotations,
+      showMeasurement: showMeasurement ?? this.showMeasurement,
     );
   }
 }

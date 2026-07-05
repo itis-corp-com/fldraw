@@ -16,6 +16,7 @@ class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
   CanvasBloc() : super(const CanvasState()) {
     on<CanvasPanned>(_onCanvasPanned);
     on<CanvasZoomed>(_onCanvasZoomed);
+    on<ViewportSet>(_onViewportSet);
     on<NodeAdded>(_onNodeAdded);
     on<DrawingObjectAdded>(_onDrawingObjectAdded);
     on<ObjectsRemoved>(_onObjectsRemoved);
@@ -95,6 +96,10 @@ class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
 
   void _onCanvasZoomed(CanvasZoomed event, Emitter<CanvasState> emit) {
     emit(state.copyWith(viewportZoom: event.zoom));
+  }
+
+  void _onViewportSet(ViewportSet event, Emitter<CanvasState> emit) {
+    emit(state.copyWith(viewportZoom: event.zoom, viewportOffset: event.offset));
   }
 
   void _onNodeAdded(NodeAdded event, Emitter<CanvasState> emit) {
@@ -229,6 +234,8 @@ class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
           object.rect = object.rect.shift(effectiveDelta);
         } else if (object is SvgObject) {
           object.rect = object.rect.shift(effectiveDelta);
+        } else if (object is ReferencePointObject) {
+          object.position += effectiveDelta;
         }
 
         newDrawingObjects[id] = object.copyWith();
@@ -341,6 +348,10 @@ class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
                 return FigureObject.fromJson(json);
               case 'text':
                 return TextObject.fromJson(json);
+              case 'svg':
+                return SvgObject.fromJson(json);
+              case 'referencePoint':
+                return ReferencePointObject.fromJson(json);
               default:
                 return null;
             }
