@@ -789,37 +789,65 @@ class FlDrawEditorRenderBox extends RenderBox
 
           canvas.scale(scaleX, scaleY);
 
-          final tint = obj.tintColor ?? style.svgTintColor;
-          if (tint != null) {
-            // White-preserving recolour: the assets are grayscale line/fill
-            // art (dark ~#4d4d4d/#080908 shapes, white interior detail). A flat
-            // srcIn tint would paint the whole silhouette one colour and lose
-            // the white detail. Instead map luminance with a per-channel affine
-            // ramp through (dark -> chosen colour) and (white -> white): filled
-            // figures (pedestrians) become a coloured body with white detail,
-            // and vehicle line-art becomes coloured outlines.
-            final argb = tint.toARGB32();
-            final r = ((argb >> 16) & 0xFF).toDouble();
-            final g = ((argb >> 8) & 0xFF).toDouble();
-            final b = (argb & 0xFF).toDouble();
-            const dark = 77.0; // #4d4d4d reference for the dark fills
-            double slope(double c) => (255.0 - c) / (255.0 - dark);
-            double offset(double c) => c - slope(c) * dark;
-            final tintPaint = Paint()
-              ..colorFilter = ColorFilter.matrix(<double>[
-                slope(r), 0, 0, 0, offset(r), //
-                0, slope(g), 0, 0, offset(g), //
-                0, 0, slope(b), 0, offset(b), //
-                0, 0, 0, 1, 0, //
-              ]);
+          final svgBounds = Rect.fromLTWH(0, 0, svgSize.width, svgSize.height);
+          final bodyImg = obj.bodyImage;
+          final filled = style.filledAssets && bodyImg != null;
+
+          if (filled) {
+            // Filled style: a solid body (the chosen colour, or white by
+            // default) with the line art laid over it — WHITE detail on a
+            // coloured body, dark detail on a white body.
+            final bodyColor = obj.tintColor ?? const Color(0xFFFFFFFF);
+            canvas.drawImageRect(
+              bodyImg,
+              Rect.fromLTWH(
+                  0, 0, bodyImg.width.toDouble(), bodyImg.height.toDouble()),
+              svgBounds,
+              Paint()
+                ..colorFilter = ColorFilter.mode(bodyColor, BlendMode.srcIn)
+                ..filterQuality = FilterQuality.medium
+                ..isAntiAlias = true,
+            );
+            final lineColor = obj.tintColor != null
+                ? const Color(0xFFFFFFFF)
+                : const Color(0xFF222222);
             canvas.saveLayer(
-              Rect.fromLTWH(0, 0, svgSize.width, svgSize.height),
-              tintPaint,
+              svgBounds,
+              Paint()
+                ..colorFilter = ColorFilter.mode(lineColor, BlendMode.srcIn),
             );
             canvas.drawPicture(obj.pictureInfo!.picture);
             canvas.restore();
           } else {
-            canvas.drawPicture(obj.pictureInfo!.picture);
+            // Wireframe (original): white-preserving luminance ramp — the
+            // assets are grayscale line/fill art (dark ~#4d4d4d/#080908 shapes,
+            // white interior detail). A flat srcIn tint would paint the whole
+            // silhouette one colour and lose the white detail. Map luminance
+            // with a per-channel affine ramp through (dark -> chosen colour)
+            // and (white -> white): filled figures become a coloured body with
+            // white detail, and vehicle line-art becomes coloured outlines.
+            final tint = obj.tintColor ?? style.svgTintColor;
+            if (tint != null) {
+              final argb = tint.toARGB32();
+              final r = ((argb >> 16) & 0xFF).toDouble();
+              final g = ((argb >> 8) & 0xFF).toDouble();
+              final b = (argb & 0xFF).toDouble();
+              const dark = 77.0; // #4d4d4d reference for the dark fills
+              double slope(double c) => (255.0 - c) / (255.0 - dark);
+              double offset(double c) => c - slope(c) * dark;
+              final tintPaint = Paint()
+                ..colorFilter = ColorFilter.matrix(<double>[
+                  slope(r), 0, 0, 0, offset(r), //
+                  0, slope(g), 0, 0, offset(g), //
+                  0, 0, slope(b), 0, offset(b), //
+                  0, 0, 0, 1, 0, //
+                ]);
+              canvas.saveLayer(svgBounds, tintPaint);
+              canvas.drawPicture(obj.pictureInfo!.picture);
+              canvas.restore();
+            } else {
+              canvas.drawPicture(obj.pictureInfo!.picture);
+            }
           }
         } else {
           // Placeholder rect for SVG not yet loaded

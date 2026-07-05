@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:equatable/equatable.dart';
 import 'package:fldraw/src/core/utils/json_extensions.dart';
@@ -672,6 +673,10 @@ class SvgObject extends DrawingObject {
   Rect _rect;
   final String assetPath;
   PictureInfo? pictureInfo;
+  /// Runtime-only synthesised white silhouette drawn behind the line art so
+  /// the asset reads as a filled body (recoloured by [tintColor]). Not
+  /// serialised; the host regenerates it when the picture is (re)loaded.
+  ui.Image? bodyImage;
   double rotation; // radians
   String label;
   /// Free-form text annotation displayed below the unit badge.
@@ -685,6 +690,7 @@ class SvgObject extends DrawingObject {
     required Rect rect,
     required this.assetPath,
     this.pictureInfo,
+    this.bodyImage,
     this.rotation = 0.0,
     this.label = '',
     this.annotation = '',
@@ -745,6 +751,7 @@ class SvgObject extends DrawingObject {
       rect: rect ?? _rect,
       assetPath: assetPath,
       pictureInfo: pictureInfo,
+      bodyImage: bodyImage,
       rotation: rotation ?? this.rotation,
       label: label ?? this.label,
       annotation: annotation ?? this.annotation,
