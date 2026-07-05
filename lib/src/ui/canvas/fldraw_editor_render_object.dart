@@ -884,32 +884,32 @@ class FlDrawEditorRenderBox extends RenderBox
         canvas.restore(); // outer save (rotation transform)
 
         // Paint unit number badge AFTER rotation restore so it stays upright.
-        // Compute the badge anchor at the rotated bottom-right corner.
+        // Anchor at the rotated TOP-LEFT corner (the type label sits below).
         if (obj.label.isNotEmpty) {
           final rectCenter = obj.rect.center;
           final cosR = cos(obj.rotation);
           final sinR = sin(obj.rotation);
-          // Bottom-right corner in local space, rotated to world space
-          final brLocal = Offset(
-            obj.rect.right - rectCenter.dx,
-            obj.rect.bottom - rectCenter.dy,
+          // Top-left corner in local space, rotated to world space.
+          final tlLocal = Offset(
+            obj.rect.left - rectCenter.dx,
+            obj.rect.top - rectCenter.dy,
           );
-          final brWorld = Offset(
-            rectCenter.dx + brLocal.dx * cosR - brLocal.dy * sinR,
-            rectCenter.dy + brLocal.dx * sinR + brLocal.dy * cosR,
+          final tlWorld = Offset(
+            rectCenter.dx + tlLocal.dx * cosR - tlLocal.dy * sinR,
+            rectCenter.dy + tlLocal.dx * sinR + tlLocal.dy * cosR,
           );
 
           final shortSide = obj.rect.shortestSide;
           final badgeDiameter =
               (shortSide * 0.32).clamp(16.0 / zoom, 40.0 / zoom);
           final badgeRadius = badgeDiameter / 2;
-          // Push the badge OUTWARD from the bottom-right corner (along the
+          // Push the badge OUTWARD from the top-left corner (along the
           // centre→corner direction) so it sits just off the asset, not on it.
-          final outward = brWorld - rectCenter;
+          final outward = tlWorld - rectCenter;
           final outLen = outward.distance;
           final outDir =
-              outLen > 0 ? outward / outLen : const Offset(0.707, 0.707);
-          final badgeCenter = brWorld + outDir * (badgeRadius * 0.8);
+              outLen > 0 ? outward / outLen : const Offset(-0.707, -0.707);
+          final badgeCenter = tlWorld + outDir * (badgeRadius * 0.8);
 
           final badgeFill = Paint()..color = const Color(0xFFFFFFFF);
           final badgeBorder = Paint()
