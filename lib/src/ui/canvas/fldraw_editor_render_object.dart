@@ -997,7 +997,7 @@ class FlDrawEditorRenderBox extends RenderBox
           // Type-name label below the asset (bottom-centre), when toggled on.
           // Upright, dark text on a light backdrop so it reads on the white
           // blueprint (and on darker areas).
-          if (style.showAssetLabels && obj.annotation.isNotEmpty) {
+          if (obj.showLabel && obj.annotation.isNotEmpty) {
             final bcLocal = Offset(0, obj.rect.bottom - rectCenter.dy);
             final bcWorld = Offset(
               rectCenter.dx + bcLocal.dx * cosR - bcLocal.dy * sinR,

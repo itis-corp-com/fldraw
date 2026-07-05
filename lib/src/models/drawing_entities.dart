@@ -687,6 +687,9 @@ class SvgObject extends DrawingObject {
   /// When true this asset renders as the original wireframe/line art; when
   /// false (default) it renders filled. Per-object so each unit can differ.
   final bool wireframe;
+  /// When true (default) the [annotation] type-name label is shown under the
+  /// asset. Per-object toggle.
+  final bool showLabel;
 
   SvgObject({
     required super.id,
@@ -700,6 +703,7 @@ class SvgObject extends DrawingObject {
     this.tintColor,
     this.damageMarks = const [],
     this.wireframe = false,
+    this.showLabel = true,
     super.isSelected,
   }) : _rect = rect;
 
@@ -723,6 +727,7 @@ class SvgObject extends DrawingObject {
     if (damageMarks.isNotEmpty)
       'damageMarks': damageMarks.map((o) => [o.dx, o.dy]).toList(),
     if (wireframe) 'wireframe': true,
+    if (!showLabel) 'showLabel': false,
   };
 
   factory SvgObject.fromJson(Map<String, dynamic> json) {
@@ -739,6 +744,7 @@ class SvgObject extends DrawingObject {
           ?.map((e) => Offset((e[0] as num).toDouble(), (e[1] as num).toDouble()))
           .toList() ?? const [],
       wireframe: json['wireframe'] as bool? ?? false,
+      showLabel: json['showLabel'] as bool? ?? true,
     );
   }
 
@@ -752,6 +758,7 @@ class SvgObject extends DrawingObject {
     bool? isSelected,
     List<Offset>? damageMarks,
     bool? wireframe,
+    bool? showLabel,
   }) {
     return SvgObject(
       id: id,
@@ -766,6 +773,7 @@ class SvgObject extends DrawingObject {
       isSelected: isSelected ?? this.isSelected,
       damageMarks: damageMarks ?? this.damageMarks,
       wireframe: wireframe ?? this.wireframe,
+      showLabel: showLabel ?? this.showLabel,
     );
   }
 }

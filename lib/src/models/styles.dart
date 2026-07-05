@@ -205,10 +205,6 @@ class FlDrawEditorStyle {
   /// [defaultStrokeColor] or white when null.
   final Color? labelColor;
 
-  /// When true, an SvgObject's [annotation] (e.g. its type name) is drawn as a
-  /// small label below the asset. Hosts toggle this on/off.
-  final bool showAssetLabels;
-
   const FlDrawEditorStyle({
     this.decoration = const BoxDecoration(color: Colors.black12),
     this.padding = const EdgeInsets.all(8.0),
@@ -218,7 +214,6 @@ class FlDrawEditorStyle {
     this.defaultStrokeColor,
     this.metersPerWorldUnit,
     this.labelColor,
-    this.showAssetLabels = false,
   });
 
   FlDrawEditorStyle copyWith({
@@ -230,7 +225,6 @@ class FlDrawEditorStyle {
     Color? defaultStrokeColor,
     double? metersPerWorldUnit,
     Color? labelColor,
-    bool? showAssetLabels,
   }) {
     return FlDrawEditorStyle(
       decoration: decoration ?? this.decoration,
@@ -241,7 +235,6 @@ class FlDrawEditorStyle {
       defaultStrokeColor: defaultStrokeColor ?? this.defaultStrokeColor,
       metersPerWorldUnit: metersPerWorldUnit ?? this.metersPerWorldUnit,
       labelColor: labelColor ?? this.labelColor,
-      showAssetLabels: showAssetLabels ?? this.showAssetLabels,
     );
   }
 }
