@@ -808,9 +808,15 @@ class FlDrawEditorRenderBox extends RenderBox
                 ..filterQuality = FilterQuality.medium
                 ..isAntiAlias = true,
             );
-            final lineColor = tint != null
-                ? const Color(0xFFFFFFFF)
-                : const Color(0xFF222222);
+            // Dark detail on a light body (white/yellow), white detail on a
+            // dark/saturated body (red/blue/…).
+            final bArgb = bodyColor.toARGB32();
+            final bLum = 0.299 * ((bArgb >> 16) & 0xFF) +
+                0.587 * ((bArgb >> 8) & 0xFF) +
+                0.114 * (bArgb & 0xFF);
+            final lineColor = bLum > 150
+                ? const Color(0xFF222222)
+                : const Color(0xFFFFFFFF);
             canvas.saveLayer(
               svgBounds,
               Paint()
@@ -841,10 +847,11 @@ class FlDrawEditorRenderBox extends RenderBox
             canvas.drawPicture(obj.pictureInfo!.picture);
             canvas.restore();
           } else {
-            // WIREFRAME (per-object), or an untinted filled figure: the
-            // white-preserving luminance ramp — dark ink -> chosen colour,
-            // white detail stays white; line-art becomes coloured outlines.
-            final rampTint = tint ?? style.svgTintColor;
+            // WIREFRAME (per-object), or an untinted filled figure: render the
+            // ORIGINAL default line art — always the default (black) colour,
+            // ignoring any tint the asset carries, so wireframe reverts to the
+            // asset's original look.
+            final rampTint = style.svgTintColor;
             if (rampTint != null) {
               final argb = rampTint.toARGB32();
               final r = ((argb >> 16) & 0xFF).toDouble();
