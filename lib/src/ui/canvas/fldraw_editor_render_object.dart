@@ -420,67 +420,45 @@ class FlDrawEditorRenderBox extends RenderBox
           continue;
         }
 
-        // Draw a compact note icon instead of full text
-        final iconRect = obj.rect;
-        final iconColor = obj.style.color ?? defaultColor;
+        // A small black anchor dot with the actual text beside it, in the
+        // same style as asset labels (weight/colour come from obj.style). The
+        // dot sits at the rect's centre-left and the text fills the rect, so
+        // the whole label is selectable.
+        final anchor = Offset(obj.rect.left, obj.rect.center.dy);
+        final textColor = obj.style.color ?? defaultColor;
+        final fontSize = (obj.style.fontSize ?? 11.0) / zoom;
+        final tp = TextPainter(
+          text: TextSpan(
+            text: obj.text,
+            style: TextStyle(
+              color: textColor,
+              fontSize: fontSize,
+              fontWeight: obj.style.fontWeight ?? FontWeight.w500,
+              letterSpacing: 0.4 / zoom,
+              height: 1.15,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout(maxWidth: 240.0 / zoom);
 
-        // Filled rounded-rect background
-        final bgPaint = Paint()
-          ..color = iconColor.withOpacity(0.15)
-          ..style = PaintingStyle.fill;
-        final borderPaint2 = Paint()
-          ..color = iconColor.withOpacity(0.7)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5 / zoom;
-        final rRect = RRect.fromRectAndRadius(
-          iconRect,
-          Radius.circular(4.0 / zoom),
+        final textPos = anchor + Offset(7.0 / zoom, -tp.height / 2);
+        final bg = Rect.fromLTWH(
+          textPos.dx - 2.5 / zoom,
+          textPos.dy - 1.5 / zoom,
+          tp.width + 5.0 / zoom,
+          tp.height + 3.0 / zoom,
         );
-        canvas.drawRRect(rRect, bgPaint);
-        canvas.drawRRect(rRect, borderPaint2);
-
-        // Draw a small chat-bubble / note icon inside
-        final cx = iconRect.center.dx;
-        final cy = iconRect.center.dy;
-        final s = iconRect.width * 0.35; // icon half-size
-        final notePath = Path()
-          ..moveTo(cx - s, cy - s * 0.7)
-          ..lineTo(cx + s, cy - s * 0.7)
-          ..lineTo(cx + s, cy + s * 0.3)
-          ..lineTo(cx + s * 0.2, cy + s * 0.3)
-          ..lineTo(cx - s * 0.2, cy + s * 0.8)
-          ..lineTo(cx - s * 0.2, cy + s * 0.3)
-          ..lineTo(cx - s, cy + s * 0.3)
-          ..close();
-        final iconPaint = Paint()
-          ..color = iconColor.withOpacity(0.8)
-          ..style = PaintingStyle.fill;
-        canvas.drawPath(notePath, iconPaint);
-
-        // Two small "text lines" inside the bubble
-        final linePaint2 = Paint()
-          ..color = (iconColor == Colors.white || iconColor == const Color(0xFFFFFFFF))
-              ? Colors.black.withOpacity(0.5)
-              : Colors.white.withOpacity(0.7)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2 / zoom
-          ..strokeCap = StrokeCap.round;
-        canvas.drawLine(
-          Offset(cx - s * 0.55, cy - s * 0.25),
-          Offset(cx + s * 0.55, cy - s * 0.25),
-          linePaint2,
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(bg, Radius.circular(2.5 / zoom)),
+          Paint()..color = const Color(0xC6FFFFFF),
         );
-        canvas.drawLine(
-          Offset(cx - s * 0.55, cy + s * 0.05),
-          Offset(cx + s * 0.35, cy + s * 0.05),
-          linePaint2,
-        );
+        tp.paint(canvas, textPos);
+        // Anchor dot on top so it stays visible.
+        canvas.drawCircle(
+            anchor, 2.6 / zoom, Paint()..color = const Color(0xFF111111));
 
         if (isSelected) {
-          final selectionPadding = 4.0 / zoom;
-          final selectionRect = obj.rect.inflate(selectionPadding);
-          canvas.drawRect(selectionRect, selectedBorderPaint);
-          // No resize handles — note icons are fixed-size
+          canvas.drawRect(bg.inflate(3.0 / zoom), selectedBorderPaint);
         }
         continue;
       }

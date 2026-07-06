@@ -1840,14 +1840,20 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
     const fontSize = 12.0;
     final textStyle = TextStyle(fontSize: fontSize, color: strokeColor);
 
-    // Fixed icon size for note icons (24x24 world units)
-    const double iconSize = 24.0;
+    // Size the hit-rect to the text (dot gap + text + padding) so the whole
+    // label is selectable, not just the anchor dot.
+    final tp = TextPainter(
+      text: TextSpan(text: result, style: textStyle),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 240.0);
+    final double rw = 7.0 + tp.width + 6.0;
+    final double rh = tp.height + 4.0;
     final now = DateTime.now().millisecondsSinceEpoch;
 
     if (isNew) {
       final newObject = TextObject(
         id: const Uuid().v4(),
-        rect: Rect.fromLTWH(position.dx, position.dy, iconSize, iconSize),
+        rect: Rect.fromLTWH(position.dx, position.dy - rh / 2, rw, rh),
         text: result,
         style: textStyle,
         timestamp: now,
@@ -1859,7 +1865,8 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
       final updated = obj.copyWith(
         text: result,
         style: textStyle,
-        rect: Rect.fromLTWH(obj.rect.left, obj.rect.top, iconSize, iconSize),
+        rect: Rect.fromLTWH(
+            obj.rect.left, obj.rect.center.dy - rh / 2, rw, rh),
         timestamp: now,
       );
       _canvasBloc.add(DrawingObjectUpdated(updated));
