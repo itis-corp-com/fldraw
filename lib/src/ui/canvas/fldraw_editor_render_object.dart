@@ -967,9 +967,9 @@ class FlDrawEditorRenderBox extends RenderBox
 
           final badgeFill = Paint()..color = const Color(0xFFFFFFFF);
           final badgeBorder = Paint()
-            ..color = const Color(0xFF666666)
+            ..color = const Color(0xFF777777)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5 / zoom;
+            ..strokeWidth = 0.8 / zoom;
           canvas.drawCircle(badgeCenter, badgeRadius, badgeFill);
           canvas.drawCircle(badgeCenter, badgeRadius, badgeBorder);
 
@@ -1512,15 +1512,25 @@ class FlDrawEditorRenderBox extends RenderBox
       return; // Avoid errors if start and end are the same
     final angle = lineVector.direction;
 
-    final Path path = Path();
+    // A clean, solid (filled) triangular head reads far better than an open
+    // stroked "V", which looked hand-drawn.
     final p2 = end - Offset.fromDirection(angle - arrowAngle, arrowSize);
     final p3 = end - Offset.fromDirection(angle + arrowAngle, arrowSize);
-
-    path.moveTo(p2.dx, p2.dy);
-    path.lineTo(end.dx, end.dy);
-    path.lineTo(p3.dx, p3.dy);
-
-    canvas.drawPath(path, paint..style = PaintingStyle.stroke);
+    // Pull the base back very slightly so the head sits flush on the line.
+    final baseMid = end - Offset.fromDirection(angle, arrowSize * 0.72);
+    final path = Path()
+      ..moveTo(end.dx, end.dy)
+      ..lineTo(p2.dx, p2.dy)
+      ..lineTo(baseMid.dx, baseMid.dy)
+      ..lineTo(p3.dx, p3.dy)
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = paint.color
+        ..style = PaintingStyle.fill
+        ..isAntiAlias = true,
+    );
   }
 
   void _paintOrthogonalPath(
