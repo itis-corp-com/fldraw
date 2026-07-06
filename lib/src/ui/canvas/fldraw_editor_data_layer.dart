@@ -800,7 +800,9 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
               ? (obj.end.dx - obj.start.dx).abs() > (obj.end.dy - obj.start.dy).abs()
                   ? Offset(end.dx, start.dy)
                   : Offset(start.dx, end.dy)
-              : onCurveMidPoint,
+              : obj.pathType == LinkPathType.straight
+                  ? midPoint
+                  : onCurveMidPoint,
         };
       } else if (obj is LineObject) {
         final start = obj.start;
@@ -810,7 +812,9 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
         handles = {
           Handle.arrowStart: start,
           Handle.arrowEnd: end,
-          Handle.midPoint: onCurveMidPoint,
+          Handle.midPoint: obj.pathType == LinkPathType.straight
+              ? midPoint
+              : onCurveMidPoint,
         };
       }
 
@@ -1056,7 +1060,11 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
           );
           _canvasBloc.add(DrawingObjectUpdated(updatedObject));
         } else if (handle == Handle.midPoint) {
-          final midPoint = (worldPos * 2) - (start * 0.5) - (end * 0.5);
+          // Straight lines: the vertex follows the cursor directly. Curved
+          // lines map the on-curve point back to the Bézier control point.
+          final midPoint = object.pathType == LinkPathType.straight
+              ? worldPos
+              : (worldPos * 2) - (start * 0.5) - (end * 0.5);
           final updatedObject = object.copyWith(midPoint: midPoint);
           _canvasBloc.add(DrawingObjectUpdated(updatedObject));
         }
@@ -1073,7 +1081,9 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
         final updatedObject = object.copyWith(end: worldPos);
         _canvasBloc.add(DrawingObjectUpdated(updatedObject));
       } else if (_isResizing.handle == Handle.midPoint) {
-        final midPoint = (worldPos * 2) - (start * 0.5) - (end * 0.5);
+        final midPoint = object.pathType == LinkPathType.straight
+            ? worldPos
+            : (worldPos * 2) - (start * 0.5) - (end * 0.5);
         final updatedObject = object.copyWith(midPoint: midPoint);
         _canvasBloc.add(DrawingObjectUpdated(updatedObject));
       }
@@ -1591,9 +1601,13 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
         final handles = {
           Handle.arrowStart: start,
           Handle.arrowEnd: end,
+          // Straight lines put the vertex handle AT the midpoint (matching the
+          // render); only curved lines use the on-curve control position.
           Handle.midPoint: obj.pathType == LinkPathType.orthogonal
               ? cornerPoint
-              : onCurveMidPoint,
+              : obj.pathType == LinkPathType.straight
+                  ? midPoint
+                  : onCurveMidPoint,
         };
         for (final entry in handles.entries) {
           if ((worldPos - entry.value).distance < handleHitAreaRadius) {
@@ -1615,7 +1629,10 @@ class _FlDrawEditorDataLayerState extends State<FlDrawEditorDataLayer>
         final handles = {
           Handle.arrowStart: start,
           Handle.arrowEnd: end,
-          Handle.midPoint: onCurveMidPoint,
+          Handle.midPoint:
+              (obj as dynamic).pathType == LinkPathType.straight
+                  ? midPoint
+                  : onCurveMidPoint,
         };
         for (final entry in handles.entries) {
           if ((worldPos - entry.value).distance < handleHitAreaRadius) {
