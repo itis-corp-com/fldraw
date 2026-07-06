@@ -746,22 +746,42 @@ class FlDrawEditorRenderBox extends RenderBox
         }
         continue;
       } else if (obj is CircleObject) {
+        if (obj.fillColor != null && obj.fillOpacity > 0) {
+          canvas.drawOval(
+            obj.rect,
+            Paint()
+              ..color = obj.fillColor!.withValues(alpha: obj.fillOpacity)
+              ..style = PaintingStyle.fill,
+          );
+        }
         if (obj.strokeColor != null) {
-          final paint = Paint()
-            ..color = obj.strokeColor!
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5 / zoom;
-          canvas.drawOval(obj.rect, paint);
+          canvas.drawOval(
+            obj.rect,
+            Paint()
+              ..color = obj.strokeColor!
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5 / zoom,
+          );
         } else {
           canvas.drawOval(obj.rect, objectPaint);
         }
       } else if (obj is RectangleObject) {
+        if (obj.fillColor != null && obj.fillOpacity > 0) {
+          canvas.drawRect(
+            obj.rect,
+            Paint()
+              ..color = obj.fillColor!.withValues(alpha: obj.fillOpacity)
+              ..style = PaintingStyle.fill,
+          );
+        }
         if (obj.strokeColor != null) {
-          final paint = Paint()
-            ..color = obj.strokeColor!
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5 / zoom;
-          canvas.drawRect(obj.rect, paint);
+          canvas.drawRect(
+            obj.rect,
+            Paint()
+              ..color = obj.strokeColor!
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5 / zoom,
+          );
         } else {
           canvas.drawRect(obj.rect, objectPaint);
         }

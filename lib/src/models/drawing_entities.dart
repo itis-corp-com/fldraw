@@ -86,9 +86,18 @@ abstract class DrawingObject {
 class RectangleObject extends DrawingObject {
   Rect _rect;
   final Color? strokeColor;
+  /// Optional fill colour; drawn at [fillOpacity] behind the outline.
+  final Color? fillColor;
+  final double fillOpacity;
 
-  RectangleObject({required super.id, required Rect rect, this.strokeColor, super.isSelected})
-    : _rect = rect;
+  RectangleObject({
+    required super.id,
+    required Rect rect,
+    this.strokeColor,
+    this.fillColor,
+    this.fillOpacity = 0.35,
+    super.isSelected,
+  }) : _rect = rect;
 
   @override
   Rect get rect => _rect;
@@ -102,6 +111,8 @@ class RectangleObject extends DrawingObject {
     'rect': _rect.toJson(),
     'isSelected': isSelected,
     'strokeColor': strokeColor?.toARGB32(),
+    if (fillColor != null) 'fillColor': fillColor!.toARGB32(),
+    'fillOpacity': fillOpacity,
   };
 
   factory RectangleObject.fromJson(Map<String, dynamic> json) {
@@ -110,16 +121,26 @@ class RectangleObject extends DrawingObject {
       rect: JSONRect.fromJson(json['rect']),
       isSelected: json['isSelected'] ?? false,
       strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
+      fillColor: json['fillColor'] != null ? Color(json['fillColor'] as int) : null,
+      fillOpacity: (json['fillOpacity'] as num?)?.toDouble() ?? 0.35,
     );
   }
 
   @override
-  DrawingObject copyWith({Rect? rect, bool? isSelected, Color? strokeColor}) {
+  DrawingObject copyWith({
+    Rect? rect,
+    bool? isSelected,
+    Color? strokeColor,
+    Color? fillColor,
+    double? fillOpacity,
+  }) {
     return RectangleObject(
       id: id,
       rect: rect ?? _rect,
       isSelected: isSelected ?? this.isSelected,
       strokeColor: strokeColor ?? this.strokeColor,
+      fillColor: fillColor ?? this.fillColor,
+      fillOpacity: fillOpacity ?? this.fillOpacity,
     );
   }
 }
@@ -127,9 +148,18 @@ class RectangleObject extends DrawingObject {
 class CircleObject extends DrawingObject {
   Rect _rect;
   final Color? strokeColor;
+  /// Optional fill colour; drawn at [fillOpacity] behind the outline.
+  final Color? fillColor;
+  final double fillOpacity;
 
-  CircleObject({required super.id, required Rect rect, this.strokeColor, super.isSelected})
-    : _rect = rect;
+  CircleObject({
+    required super.id,
+    required Rect rect,
+    this.strokeColor,
+    this.fillColor,
+    this.fillOpacity = 0.35,
+    super.isSelected,
+  }) : _rect = rect;
 
   @override
   Rect get rect => _rect;
@@ -143,6 +173,8 @@ class CircleObject extends DrawingObject {
     'rect': _rect.toJson(),
     'isSelected': isSelected,
     'strokeColor': strokeColor?.toARGB32(),
+    if (fillColor != null) 'fillColor': fillColor!.toARGB32(),
+    'fillOpacity': fillOpacity,
   };
 
   factory CircleObject.fromJson(Map<String, dynamic> json) {
@@ -151,16 +183,26 @@ class CircleObject extends DrawingObject {
       rect: JSONRect.fromJson(json['rect']),
       isSelected: json['isSelected'] ?? false,
       strokeColor: json['strokeColor'] != null ? Color(json['strokeColor'] as int) : null,
+      fillColor: json['fillColor'] != null ? Color(json['fillColor'] as int) : null,
+      fillOpacity: (json['fillOpacity'] as num?)?.toDouble() ?? 0.35,
     );
   }
 
   @override
-  DrawingObject copyWith({Rect? rect, bool? isSelected, Color? strokeColor}) {
+  DrawingObject copyWith({
+    Rect? rect,
+    bool? isSelected,
+    Color? strokeColor,
+    Color? fillColor,
+    double? fillOpacity,
+  }) {
     return CircleObject(
       id: id,
       rect: rect ?? _rect,
       isSelected: isSelected ?? this.isSelected,
       strokeColor: strokeColor ?? this.strokeColor,
+      fillColor: fillColor ?? this.fillColor,
+      fillOpacity: fillOpacity ?? this.fillOpacity,
     );
   }
 }
