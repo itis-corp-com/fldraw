@@ -355,10 +355,6 @@ class FlDrawEditorRenderBox extends RenderBox
       ..color = Colors.blue
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0 / zoom;
-    final Paint selectedArrowPaint = Paint()
-      ..color = defaultColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0 / zoom;
 
     final Paint handlePaint = Paint()..color = Colors.blue;
     final Paint handleHitAreaPaint = Paint()..color = Colors.transparent;
@@ -488,15 +484,11 @@ class FlDrawEditorRenderBox extends RenderBox
         }
         continue;
       } else if (obj is ArrowObject) {
-        final Paint paint;
-        if (obj.strokeColor != null) {
-          paint = Paint()
-            ..color = obj.strokeColor!
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = (obj.isSelected ? 2.5 : 2.0) / zoom;
-        } else {
-          paint = obj.isSelected ? selectedArrowPaint : objectPaint;
-        }
+        // Thin connector line (head size is set separately in _paintArrowHead).
+        final Paint paint = Paint()
+          ..color = obj.strokeColor ?? defaultColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (obj.isSelected ? 1.4 : 1.0) / zoom;
 
         var start = (obj).start;
         final startAttachment = obj.startAttachment;
@@ -646,15 +638,11 @@ class FlDrawEditorRenderBox extends RenderBox
         }
         continue;
       } else if (obj is LineObject) {
-        final Paint paint;
-        if (obj.strokeColor != null) {
-          paint = Paint()
-            ..color = obj.strokeColor!
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = (obj.isSelected ? 2.0 : 1.5) / zoom;
-        } else {
-          paint = obj.isSelected ? selectedArrowPaint : objectPaint;
-        }
+        // Thin connector line, matching arrows.
+        final Paint paint = Paint()
+          ..color = obj.strokeColor ?? defaultColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (obj.isSelected ? 1.4 : 1.0) / zoom;
 
         final controlPoint = obj.midPoint ?? (obj.start + obj.end) / 2;
 
