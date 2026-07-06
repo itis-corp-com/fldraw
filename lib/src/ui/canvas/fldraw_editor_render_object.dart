@@ -1487,7 +1487,7 @@ class FlDrawEditorRenderBox extends RenderBox
     Paint paint,
   ) {
     final double arrowSize = 12.0 / zoom;
-    const double arrowAngle = 25 * (pi / 180);
+    const double arrowAngle = 16 * (pi / 180); // narrower = thinner head
 
     // For orthogonal lines, the "control point" is the corner, not the start.
     // We need to determine the final segment's direction.
