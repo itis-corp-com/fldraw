@@ -36,6 +36,13 @@ class FlToolbar extends StatelessWidget {
   /// theme default.
   final Color? tabSelectedColor;
 
+  /// Optional override for the "+" (add-object) tool. When provided, tapping
+  /// the add button invokes this callback instead of showing fldraw's built-in
+  /// flat SVG popover — letting the host present its own asset picker (e.g. a
+  /// grouped/categorized sheet). The passed context is the add button's
+  /// element, suitable for anchoring a popover or opening a modal sheet.
+  final void Function(BuildContext context)? onAddPressed;
+
   const FlToolbar({
     super.key,
     required this.svgs,
@@ -45,6 +52,7 @@ class FlToolbar extends StatelessWidget {
     this.iconColor,
     this.tabBackgroundColor,
     this.tabSelectedColor,
+    this.onAddPressed,
   });
 
   @override
@@ -58,7 +66,11 @@ class FlToolbar extends StatelessWidget {
 
       if (tool == EditorTool.add) {
         if (popoverContext == null) return;
-        _showAddPopover(popoverContext);
+        if (onAddPressed != null) {
+          onAddPressed!(popoverContext);
+        } else {
+          _showAddPopover(popoverContext);
+        }
       } else {
         toolBloc.add(ToolSelected(tool));
       }
