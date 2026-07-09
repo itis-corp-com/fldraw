@@ -325,12 +325,16 @@ class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
       );
       final zoom = viewportJson['zoom'] as double;
 
-      final nodesList = (event.data['nodes'] as List)
+      // Tolerate missing nodes/drawingObjects: a JSON round-trip through
+      // Firebase RTDB DROPS empty arrays, so `nodes: []` comes back absent
+      // (null) and `null as List` would throw, aborting the whole load.
+      final nodesList = (event.data['nodes'] as List? ?? const [])
           .map((json) => NodeInstance.fromJson(json))
           .toList();
       final nodes = {for (var node in nodesList) node.id: node};
 
-      final drawingObjectsList = (event.data['drawingObjects'] as List)
+      final drawingObjectsList = (event.data['drawingObjects'] as List? ??
+              const [])
           .map((json) {
             // This logic can be moved to a factory in DrawingObject
             switch (json['type']) {
@@ -369,6 +373,8 @@ class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
         ),
       );
     } catch (e, s) {
+      // ignore: avoid_print
+      print('[fldraw] loadProject parse FAILED: $e');
       throw Exception('Failed to load project: $e\n$s');
     }
   }

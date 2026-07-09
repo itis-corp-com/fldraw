@@ -304,10 +304,10 @@ class ArrowObject extends DrawingObject {
     final annotationsJson = json['vertexAnnotations'] as Map<String, dynamic>?;
     return ArrowObject(
       id: json['id'],
-      start: JSONOffset.fromJson((json['start'] as List).cast<double>()),
-      end: JSONOffset.fromJson((json['end'] as List).cast<double>()),
+      start: JSONOffset.fromJson((json['start'] as List)),
+      end: JSONOffset.fromJson((json['end'] as List)),
       midPoint: json['midPoint'] != null
-          ? JSONOffset.fromJson((json['midPoint'] as List).cast<double>())
+          ? JSONOffset.fromJson((json['midPoint'] as List))
           : null,
       isSelected: json['isSelected'] ?? false,
       pathType: LinkPathType.values.byName(json['pathType'] ?? 'straight'),
@@ -444,10 +444,10 @@ class LineObject extends DrawingObject {
     final annotationsJson = json['vertexAnnotations'] as Map<String, dynamic>?;
     return LineObject(
       id: json['id'],
-      start: JSONOffset.fromJson((json['start'] as List).cast<double>()),
-      end: JSONOffset.fromJson((json['end'] as List).cast<double>()),
+      start: JSONOffset.fromJson((json['start'] as List)),
+      end: JSONOffset.fromJson((json['end'] as List)),
       midPoint: json['midPoint'] != null
-          ? JSONOffset.fromJson((json['midPoint'] as List).cast<double>())
+          ? JSONOffset.fromJson((json['midPoint'] as List))
           : null,
       isSelected: json['isSelected'] ?? false,
       pathType: LinkPathType.values.byName(json['pathType'] ?? 'straight'),
@@ -680,7 +680,7 @@ class TextObject extends DrawingObject {
       rect: JSONRect.fromJson(json['rect']),
       text: json['text'] ?? 'Text',
       style: TextStyle(
-        fontSize: styleJson?['fontSize'] as double? ?? 16,
+        fontSize: (styleJson?['fontSize'] as num?)?.toDouble() ?? 16,
         color: styleJson?['color'] != null
             ? Color(styleJson!['color'] as int)
             : Colors.white,
@@ -850,7 +850,7 @@ class ReferencePointObject extends DrawingObject {
   factory ReferencePointObject.fromJson(Map<String, dynamic> json) {
     return ReferencePointObject(
       id: json['id'] as String,
-      position: JSONOffset.fromJson((json['position'] as List).cast<double>()),
+      position: JSONOffset.fromJson((json['position'] as List)),
       radius: (json['radius'] as num?)?.toDouble() ?? 6.0,
       isSelected: json['isSelected'] as bool? ?? false,
     );
@@ -913,9 +913,12 @@ class ObjectAttachment extends Equatable {
   };
 
   factory ObjectAttachment.fromJson(Map<String, dynamic> json) {
+    final rp = json['relativePosition'] as List;
     return ObjectAttachment(
       objectId: json['objectId'],
-      relativePosition: Offset(json['relativePosition'][0], json['relativePosition'][1]),
+      // num.toDouble() so an int-valued coord (e.g. a `0` from an RTDB round
+      // trip) doesn't throw under dart2js on the web.
+      relativePosition: Offset((rp[0] as num).toDouble(), (rp[1] as num).toDouble()),
     );
   }
 }

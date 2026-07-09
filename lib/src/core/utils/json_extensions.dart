@@ -25,7 +25,11 @@ extension JSONColor on Color {
 }
 
 extension JSONOffset on Offset {
-  static Offset fromJson(List<double> json) => Offset(json[0], json[1]);
+  // Accept List<dynamic> and coerce via num.toDouble(): JSON round-trips
+  // (esp. Firebase RTDB) turn whole-number doubles into ints, and dart2js
+  // throws when an int-valued number is fed to Offset's double params.
+  static Offset fromJson(List<dynamic> json) =>
+      Offset((json[0] as num).toDouble(), (json[1] as num).toDouble());
 
   List<double> toJson() => [dx, dy];
 }
@@ -33,10 +37,10 @@ extension JSONOffset on Offset {
 extension JSONRect on Rect {
   static Rect fromJson(Map<String, dynamic> json) {
     return Rect.fromLTWH(
-      json['left'] as double,
-      json['top'] as double,
-      json['width'] as double,
-      json['height'] as double,
+      (json['left'] as num).toDouble(),
+      (json['top'] as num).toDouble(),
+      (json['width'] as num).toDouble(),
+      (json['height'] as num).toDouble(),
     );
   }
 
