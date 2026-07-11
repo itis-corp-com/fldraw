@@ -13,6 +13,12 @@ part 'canvas_state.dart';
 class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
   static const int _maxHistoryStack = 100;
 
+  // Deep-copied snapshot of the canvas taken at the START of a drag gesture,
+  // BEFORE any in-place object mutation, so an ObjectsDragEnded can push a
+  // faithful pre-move state to the undo stack. (Without this, undo restored the
+  // already-moved state — dragging a vehicle then undoing did nothing.)
+  CanvasState? _dragStartSnapshot;
+
   CanvasBloc() : super(const CanvasState()) {
     on<CanvasPanned>(_onCanvasPanned);
     on<CanvasZoomed>(_onCanvasZoomed);
@@ -190,6 +196,19 @@ class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
   }
 
   void _onObjectsDragged(ObjectsDragged event, Emitter<CanvasState> emit) {
+    // On the first drag update of a gesture, deep-copy the pre-move state so
+    // ObjectsDragEnded can push it to the undo stack. copyWith() clones each
+    // object (their mutable fields hold immutable values — Rect/Offset — so the
+    // clone is unaffected by the in-place mutation below).
+    _dragStartSnapshot ??= CanvasState.historic(
+      nodes: {for (final e in state.nodes.entries) e.key: e.value.copyWith()},
+      drawingObjects: {
+        for (final e in state.drawingObjects.entries) e.key: e.value.copyWith()
+      },
+      viewportOffset: state.viewportOffset,
+      viewportZoom: state.viewportZoom,
+    );
+
     final newNodes = Map<String, NodeInstance>.from(state.nodes);
     final newDrawingObjects = Map<String, DrawingObject>.from(
       state.drawingObjects,
@@ -250,7 +269,18 @@ class CanvasBloc extends Bloc<CanvasEvent, CanvasState> {
   }
 
   void _onObjectsDragEnded(ObjectsDragEnded event, Emitter<CanvasState> emit) {
-    _pushToUndoStack(event, emit, state);
+    // Push the pre-drag snapshot (captured before the move), not the current
+    // already-moved state, so undo returns the object(s) to where they were.
+    final snapshot = _dragStartSnapshot;
+    _dragStartSnapshot = null;
+    if (snapshot == null) return;
+
+    final newUndoStack = List<HistoryEntry>.from(state.undoStack)
+      ..add((snapshot, event));
+    if (newUndoStack.length > _maxHistoryStack) {
+      newUndoStack.removeAt(0);
+    }
+    emit(state.copyWith(undoStack: newUndoStack, redoStack: []));
   }
 
   void _onUndo(UndoRequested event, Emitter<CanvasState> emit) {
