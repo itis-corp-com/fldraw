@@ -43,6 +43,11 @@ class FlToolbar extends StatelessWidget {
   /// element, suitable for anchoring a popover or opening a modal sheet.
   final void Function(BuildContext context)? onAddPressed;
 
+  /// Optional override for the add-object tool's glyph. When null the built-in
+  /// "+" SVG is used; hosts whose add button opens a vehicle picker can pass a
+  /// domain icon (e.g. a car) so the button reads as "add a vehicle."
+  final IconData? addIcon;
+
   const FlToolbar({
     super.key,
     required this.svgs,
@@ -53,6 +58,7 @@ class FlToolbar extends StatelessWidget {
     this.tabBackgroundColor,
     this.tabSelectedColor,
     this.onAddPressed,
+    this.addIcon,
   });
 
   @override
@@ -103,7 +109,10 @@ class FlToolbar extends StatelessWidget {
                               ? Stack(
                                   clipBehavior: Clip.none,
                                   children: [
-                                    Assets.icons.add.svg(width: 16, color: ic),
+                                    addIcon != null
+                                        ? Icon(addIcon, size: 22, color: ic)
+                                        : Assets.icons.add
+                                            .svg(width: 16, color: ic),
                                     Positioned(
                                       bottom: -10,
                                       right: -10,
@@ -114,7 +123,9 @@ class FlToolbar extends StatelessWidget {
                                     ),
                                   ],
                                 )
-                              : Assets.icons.add.svg(width: 16, color: ic),
+                              : (addIcon != null
+                                  ? Icon(addIcon, size: 22, color: ic)
+                                  : Assets.icons.add.svg(width: 16, color: ic)),
                         ),
                       ),
                     ),
