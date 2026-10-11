@@ -446,7 +446,7 @@ class FlDrawEditorRenderBox extends RenderBox
         );
         canvas.drawRRect(
           RRect.fromRectAndRadius(bg, Radius.circular(2.5 / zoom)),
-          Paint()..color = const Color(0xC6FFFFFF),
+          Paint()..color = const Color(0x80FFFFFF),
         );
         tp.paint(canvas, textPos);
         // Anchor dot on top so it stays visible.
@@ -1015,7 +1015,7 @@ class FlDrawEditorRenderBox extends RenderBox
             );
             canvas.drawRRect(
               RRect.fromRectAndRadius(bgRect, Radius.circular(2.0 / zoom)),
-              Paint()..color = const Color(0xB3FFFFFF),
+              Paint()..color = const Color(0x80FFFFFF),
             );
             annotationPainter.paint(canvas, textOffset);
           }
